@@ -12,10 +12,10 @@ const answerB = ref('')
 const isLoading = ref(false)
 
 const userPreference = ref({
-  firstLooked: null,
   timeOnA: 0,
   timeOnB: 0,
-  switchCount: 0,
+  leftToRight: 0,
+  rightToLeft: 0,
   finalChoice: null
 })
 
@@ -77,8 +77,12 @@ function handleEyeData(data) {
   }
 }
 
-function handleRegionSwitch() {
-  userPreference.value.switchCount++
+function handleRegionSwitch({ from, to }) {
+  if (from === 'A' && to === 'B') {
+    userPreference.value.leftToRight++
+  } else if (from === 'B' && to === 'A') {
+    userPreference.value.rightToLeft++
+  }
 }
 </script>
 

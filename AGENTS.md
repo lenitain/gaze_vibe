@@ -5,10 +5,10 @@
 GazeVibe is an eye-tracking AI programming assistant prototype. It generates dual answers (detailed vs concise) to programming questions and uses webcam-based eye tracking (WebGazer.js) to learn user reading preferences.
 
 - **Frontend**: Vue 3 + Vite (`frontend/`)
-- **Backend**: Python Flask + OpenAI API (`backend/`)
+- **Backend**: Python Flask + DeepSeek/OpenAI API (`backend/`)
 - **No TypeScript** — plain JavaScript with ES modules
 - **No test framework** is currently configured
-- **No linter/formatter** is currently configured
+- **No linter/formatter** is currently configured (though `.ruff_cache/` exists, ruff is not in requirements)
 
 ## Build & Run Commands
 
@@ -16,10 +16,10 @@ GazeVibe is an eye-tracking AI programming assistant prototype. It generates dua
 
 ```bash
 cd frontend
-npm install
-npm run dev      # Dev server at http://localhost:5173
-npm run build    # Production build
-npm run preview  # Preview production build
+bun install          # or npm install (bun.lock present)
+bun run dev          # Dev server at http://localhost:5173
+bun run build        # Production build
+bun run preview      # Preview production build
 ```
 
 ### Backend
@@ -27,16 +27,17 @@ npm run preview  # Preview production build
 ```bash
 cd backend
 pip install -r requirements.txt
-python app.py    # Server at http://localhost:8000
+python app.py        # Server at http://localhost:8000
 
 # Or use uv (preferred if available):
-bash run.sh      # Creates venv, installs deps, runs app
+bash run.sh          # Creates venv, installs deps, runs app
 ```
 
 ### Environment Variables
 
 ```bash
-export OPENAI_API_KEY="your-api-key"   # Required for LLM features
+export DEEPSEEK_API_KEY="your-api-key"   # Required for LLM features
+# Backend falls back to "your-api-key-here" if unset
 ```
 
 ### Health Check

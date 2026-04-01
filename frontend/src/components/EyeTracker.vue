@@ -1,62 +1,63 @@
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 const emit = defineEmits(['data', 'region-switch'])
 
 let webgazer = null
 let isTracking = ref(false)
-let lastRegion = ref(null)
-let lastTimestamp = ref(null)
 let cameraReady = ref(false)
 let cameraError = ref('')
 let gazeCount = ref(0)
 
+let currentRegion = null
+let regionStartTime = null
+
+let isCalibrating = ref(false)
+let calibrationPoints = []
+let calibrationIndex = ref(0)
+
+const CALIBRATION_LAYOUT = [
+  { x: 0.1, y: 0.1 }, { x: 0.5, y: 0.1 }, { x: 0.9, y: 0.1 },
+  { x: 0.1, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.9, y: 0.5 },
+  { x: 0.1, y: 0.9 }, { x: 0.5, y: 0.9 }, { x: 0.9, y: 0.9 },
+]
+
 async function initWebGazer() {
   if (typeof window.webgazer === 'undefined') {
-    console.warn('WebGazer 脚本未加载，等待...')
     await new Promise(r => setTimeout(r, 500))
     return initWebGazer()
   }
 
   webgazer = window.webgazer
-
-  webgazer.setGazeListener((data, elapsedTime) => {
-    if (!data) return
-
-    gazeCount.value++
-    const x = data.x
-    const y = data.y
-    const currentTime = Date.now()
-
-    const region = getRegion(x, y)
-
-    if (region) {
-      if (lastRegion.value && lastRegion.value !== region) {
-        const duration = lastTimestamp.value ? currentTime - lastTimestamp.value : 0
-
-        if (duration > 0) {
-          emit('data', {
-            region: lastRegion.value,
-            duration: duration
-          })
-        }
-
-        emit('region-switch')
-      }
-
-      lastRegion.value = region
-      lastTimestamp.value = currentTime
-    }
-  })
-
-  webgazer.saveDataAcrossSessions = true
+  webgazer.saveDataAcrossSessions = false
+  webgazer.showPredictionPoints(false)
 
   console.log('WebGazer 初始化完成')
 }
 
-function getRegion(x, y) {
-  if (x < window.innerWidth / 2) return 'A'
-  return 'B'
+function getRegion(x) {
+  const w = window.innerWidth
+  const third = w / 3
+
+  if (currentRegion === 'A') {
+    if (x > third * 2) return 'B'
+    return 'A'
+  }
+  if (currentRegion === 'B') {
+    if (x < third) return 'A'
+    return 'B'
+  }
+  return x < w / 2 ? 'A' : 'B'
+}
+
+function flushRegion() {
+  if (currentRegion && regionStartTime) {
+    const duration = Date.now() - regionStartTime
+    if (duration > 0) {
+      emit('data', { region: currentRegion, duration })
+    }
+  }
+  regionStartTime = null
 }
 
 async function startTracking() {
@@ -65,59 +66,61 @@ async function startTracking() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true })
     stream.getTracks().forEach(t => t.stop())
-    console.log('摄像头权限已获取')
   } catch (err) {
     cameraError.value = '请允许摄像头权限后重试'
-    console.error('摄像头权限拒绝:', err)
     return
   }
 
   if (!webgazer) {
-    console.log('初始化 WebGazer...')
     await initWebGazer()
   }
 
-  console.log('webgazer 实例:', !!webgazer)
-
-  if (webgazer) {
-    try {
-      console.log('调用 webgazer.begin()...')
-      await webgazer.begin()
-      isTracking.value = true
-      cameraReady.value = true
-      gazeCount.value = 0
-      cameraError.value = ''
-      console.log('眼动追踪已启动')
-    } catch (err) {
-      const msg = err && err.message ? err.message : String(err)
-      cameraError.value = '启动失败: ' + msg
-      console.error('webgazer.begin() 失败:', err)
-    }
-  } else {
+  if (!webgazer) {
     cameraError.value = 'WebGazer 加载失败，请刷新页面'
-    console.error('webgazer 为 null')
+    return
+  }
+
+  try {
+    await webgazer.begin()
+    webgazer.removeMouseEventListeners()
+    webgazer.showPredictionPoints(false)
+
+    webgazer.setGazeListener((data) => {
+      if (!data) return
+      gazeCount.value++
+
+      const region = getRegion(data.x)
+
+      if (region !== currentRegion) {
+        flushRegion()
+        const from = currentRegion
+        currentRegion = region
+        regionStartTime = Date.now()
+        if (from) {
+          emit('region-switch', { from, to: region })
+        }
+      }
+    })
+
+    webgazer.showPredictionPoints(true)
+    isTracking.value = true
+    cameraReady.value = true
+    gazeCount.value = 0
+    currentRegion = null
+    regionStartTime = null
+
+    console.log('追踪已启动，摄像头画面应已显示，请确认能看到你的脸')
+  } catch (err) {
+    cameraError.value = '启动失败: ' + (err.message || err)
   }
 }
 
 function stopTracking() {
   if (webgazer) {
+    flushRegion()
     webgazer.pause()
     isTracking.value = false
-
-    if (lastRegion.value && lastTimestamp.value) {
-      const duration = Date.now() - lastTimestamp.value
-      if (duration > 0) {
-        emit('data', {
-          region: lastRegion.value,
-          duration: duration
-        })
-      }
-    }
-
-    lastRegion.value = null
-    lastTimestamp.value = null
-
-    console.log('眼动追踪已停止，共收到', gazeCount.value, '次注视数据')
+    currentRegion = null
   }
 }
 
@@ -126,8 +129,46 @@ function startCalibration() {
     cameraError.value = 'WebGazer 未初始化'
     return
   }
+
+  if (!isTracking.value) {
+    startTracking().then(() => {
+      if (isTracking.value) beginCalibration()
+    })
+  } else {
+    beginCalibration()
+  }
+}
+
+function beginCalibration() {
+  isCalibrating.value = true
+  calibrationIndex.value = 0
+  calibrationPoints = CALIBRATION_LAYOUT.map(p => ({
+    x: Math.round(p.x * window.innerWidth),
+    y: Math.round(p.y * window.innerHeight),
+    clicks: 0
+  }))
   webgazer.showPredictionPoints(true)
-  console.log('校准模式：请看屏幕上的不同位置，绿点表示系统预测的注视点')
+}
+
+function handleCalibrationClick(point, index) {
+  if (index !== calibrationIndex.value) return
+  point.clicks++
+
+  webgazer.recordScreenPosition(point.x, point.y, 'click')
+  console.log(`校准点 ${index} 第 ${point.clicks} 次点击，坐标: (${point.x}, ${point.y})`)
+
+  if (point.clicks >= 3) {
+    calibrationIndex.value++
+    if (calibrationIndex.value >= calibrationPoints.length) {
+      finishCalibration()
+    }
+  }
+}
+
+function finishCalibration() {
+  isCalibrating.value = false
+  webgazer.showPredictionPoints(false)
+  console.log('校准完成，校准点数:', webgazer.getStoredPoints ? webgazer.getStoredPoints().length : '未知')
 }
 
 onMounted(() => {
@@ -136,9 +177,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopTracking()
-  if (webgazer) {
-    webgazer.end()
-  }
+  if (webgazer) webgazer.end()
 })
 
 defineExpose({
@@ -168,6 +207,23 @@ defineExpose({
       校准
     </button>
   </div>
+
+  <div v-if="isCalibrating" class="calibration-overlay">
+    <div
+      v-for="(point, index) in calibrationPoints"
+      :key="index"
+      class="calib-point"
+      :class="{
+        active: index === calibrationIndex,
+        done: index < calibrationIndex
+      }"
+      :style="{ left: point.x + 'px', top: point.y + 'px' }"
+      @click="handleCalibrationClick(point, index)"
+    >
+      <span v-if="index === calibrationIndex" class="click-hint">{{ point.clicks }}/3</span>
+    </div>
+    <div class="calib-tip">依次点击每个圆点（每个点 3 次）</div>
+  </div>
 </template>
 
 <style scoped>
@@ -192,9 +248,7 @@ defineExpose({
   color: #888;
 }
 
-.status.active {
-  color: #4fc3f7;
-}
+.status.active { color: #4fc3f7; }
 
 .dot {
   width: 8px;
@@ -224,9 +278,7 @@ defineExpose({
   transition: background 0.2s;
 }
 
-.calibrate-btn:hover {
-  background: #444;
-}
+.calibrate-btn:hover { background: #444; }
 
 .error {
   display: flex;
@@ -244,5 +296,59 @@ defineExpose({
   border-radius: 3px;
   font-size: 11px;
   cursor: pointer;
+}
+
+.calibration-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 300;
+}
+
+.calib-point {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #555;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.calib-point.active {
+  background: #4fc3f7;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: calib-pulse 1s infinite;
+}
+
+.calib-point.done {
+  background: #4caf50;
+}
+
+@keyframes calib-pulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.2); }
+}
+
+.click-hint {
+  font-size: 10px;
+  color: #000;
+  font-weight: bold;
+}
+
+.calib-tip {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 14px;
+  background: rgba(0,0,0,0.6);
+  padding: 8px 16px;
+  border-radius: 6px;
 }
 </style>
