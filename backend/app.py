@@ -4,18 +4,21 @@ GazeVibe 后端服务
 
 import os
 import json
+from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import openai
 
+load_dotenv()
+
 app = Flask(__name__)
 CORS(app)
 
-# 配置 OpenAI API
-openai.api_key = os.getenv("OPENAI_API_KEY", "your-api-key-here")
-
-# 可选：配置其他 LLM
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+# 配置 DeepSeek API (兼容 OpenAI 格式)
+client = openai.OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY", "your-api-key-here"),
+    base_url="https://api.deepseek.com",
+)
 
 
 def generate_dual_answers(prompt, preference=None):
@@ -59,8 +62,8 @@ def generate_dual_answers(prompt, preference=None):
 
     try:
         # 生成详细答案
-        response_a = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response_a = client.chat.completions.create(
+            model="deepseek-chat",
             messages=[
                 {"role": "system", "content": system_a},
                 {"role": "user", "content": prompt},
@@ -71,8 +74,8 @@ def generate_dual_answers(prompt, preference=None):
         answer_a = response_a.choices[0].message.content
 
         # 生成简洁答案
-        response_b = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response_b = client.chat.completions.create(
+            model="deepseek-chat",
             messages=[
                 {"role": "system", "content": system_b},
                 {"role": "user", "content": prompt},
@@ -126,8 +129,8 @@ def health():
     return jsonify(
         {
             "status": "ok",
-            "openai_configured": bool(
-                openai.api_key and openai.api_key != "your-api-key-here"
+            "deepseek_configured": bool(
+                client.api_key and client.api_key != "your-api-key-here"
             ),
         }
     )
@@ -138,7 +141,7 @@ if __name__ == "__main__":
     print("GazeVibe 后端服务启动中...")
     print("=" * 50)
     print(
-        f"OpenAI API Key: {'已配置' if openai.api_key and openai.api_key != 'your-api-key-here' else '未配置'}"
+        f"DeepSeek API Key: {'已配置' if client.api_key and client.api_key != 'your-api-key-here' else '未配置'}"
     )
     print("访问 http://localhost:8000/api/health 检查状态")
     print("=" * 50)

@@ -3,110 +3,107 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 
 const emit = defineEmits(['data', 'region-switch'])
 
-// WebGazer 实例
 let webgazer = null
 let isTracking = ref(false)
 let lastRegion = ref(null)
 let lastTimestamp = ref(null)
-let isCalibrating = ref(false)
+let cameraReady = ref(false)
+let cameraError = ref('')
+let gazeCount = ref(0)
 
-// 4象限区域映射
-const regions = ref({
-  A: null,  // 左半边
-  B: null   // 右半边
-})
-
-// 初始化 WebGazer
 async function initWebGazer() {
-  if (typeof webgazer === 'undefined') {
-    console.warn('WebGazer 未加载，等待...')
-    setTimeout(initWebGazer, 500)
-    return
+  if (typeof window.webgazer === 'undefined') {
+    console.warn('WebGazer 脚本未加载，等待...')
+    await new Promise(r => setTimeout(r, 500))
+    return initWebGazer()
   }
 
   webgazer = window.webgazer
-  
-  // 设置数据留存时间
+
   webgazer.setGazeListener((data, elapsedTime) => {
-    if (data == null) return
-    
+    if (!data) return
+
+    gazeCount.value++
     const x = data.x
     const y = data.y
     const currentTime = Date.now()
-    
-    // 判断所在的区域
+
     const region = getRegion(x, y)
-    
+
     if (region) {
-      // 检测区域切换
       if (lastRegion.value && lastRegion.value !== region) {
         const duration = lastTimestamp.value ? currentTime - lastTimestamp.value : 0
-        
-        // 发送上一个区域的数据
+
         if (duration > 0) {
           emit('data', {
             region: lastRegion.value,
             duration: duration
           })
         }
-        
-        // 触发区域切换事件
+
         emit('region-switch')
       }
-      
+
       lastRegion.value = region
       lastTimestamp.value = currentTime
     }
   })
-  
-  // 保存数据用于分析
+
   webgazer.saveDataAcrossSessions = true
-  
+
   console.log('WebGazer 初始化完成')
 }
 
-// 获取当前注视点所在的区域
 function getRegion(x, y) {
-  const windowWidth = window.innerWidth
-  const windowHeight = window.innerHeight
-  
-  // 上下四象限
-  const isLeft = x < windowWidth / 2
-  const isTop = y < windowHeight / 2
-  
-  // 简单映射到左右两栏（忽略上下）
-  // 实际场景中，用户主要在左右两个答案之间切换
-  if (isLeft) {
-    return 'A'
-  } else {
-    return 'B'
-  }
+  if (x < window.innerWidth / 2) return 'A'
+  return 'B'
 }
 
-// 启动追踪
 async function startTracking() {
+  cameraError.value = ''
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+    stream.getTracks().forEach(t => t.stop())
+    console.log('摄像头权限已获取')
+  } catch (err) {
+    cameraError.value = '请允许摄像头权限后重试'
+    console.error('摄像头权限拒绝:', err)
+    return
+  }
+
   if (!webgazer) {
+    console.log('初始化 WebGazer...')
     await initWebGazer()
   }
-  
+
+  console.log('webgazer 实例:', !!webgazer)
+
   if (webgazer) {
     try {
+      console.log('调用 webgazer.begin()...')
       await webgazer.begin()
       isTracking.value = true
+      cameraReady.value = true
+      gazeCount.value = 0
+      cameraError.value = ''
       console.log('眼动追踪已启动')
     } catch (err) {
-      console.error('启动眼动追踪失败:', err)
+      const msg = err && err.message ? err.message : String(err)
+      cameraError.value = '启动失败: ' + msg
+      console.error('webgazer.begin() 失败:', err)
     }
+  } else {
+    cameraError.value = 'WebGazer 加载失败，请刷新页面'
+    console.error('webgazer 为 null')
   }
 }
 
-// 停止追踪
 function stopTracking() {
   if (webgazer) {
     webgazer.pause()
     isTracking.value = false
-    
-    // 发送最后的数据
+
     if (lastRegion.value && lastTimestamp.value) {
       const duration = Date.now() - lastTimestamp.value
       if (duration > 0) {
@@ -116,24 +113,24 @@ function stopTracking() {
         })
       }
     }
-    
+
     lastRegion.value = null
     lastTimestamp.value = null
-    
-    console.log('眼动追踪已停止')
+
+    console.log('眼动追踪已停止，共收到', gazeCount.value, '次注视数据')
   }
 }
 
-// 开始校准
-async function startCalibration() {
-  isCalibrating.value = true
-  // WebGazer 有内置的校准流程
-  // 这里可以添加自定义的校准逻辑
-  console.log('开始校准...')
+function startCalibration() {
+  if (!webgazer) {
+    cameraError.value = 'WebGazer 未初始化'
+    return
+  }
+  webgazer.showPredictionPoints(true)
+  console.log('校准模式：请看屏幕上的不同位置，绿点表示系统预测的注视点')
 }
 
 onMounted(() => {
-  // 延迟初始化，等待 WebGazer 脚本加载
   setTimeout(initWebGazer, 1000)
 })
 
@@ -144,25 +141,27 @@ onUnmounted(() => {
   }
 })
 
-// 暴露方法给父组件
 defineExpose({
   startTracking,
   stopTracking,
   startCalibration,
-  isTracking,
-  isCalibrating
+  isTracking
 })
 </script>
 
 <template>
   <div class="eye-tracker">
-    <div class="status" :class="{ active: isTracking }">
-      <span class="dot"></span>
-      <span>{{ isTracking ? '眼动追踪中' : '等待启动' }}</span>
+    <div v-if="cameraError" class="error">
+      {{ cameraError }}
+      <button @click="startTracking" class="retry-btn">重试</button>
     </div>
-    
-    <button 
-      v-if="!isTracking" 
+    <div v-else class="status" :class="{ active: isTracking }">
+      <span class="dot"></span>
+      <span>{{ isTracking ? `追踪中 (${gazeCount})` : '等待启动' }}</span>
+    </div>
+
+    <button
+      v-if="!isTracking && !cameraError"
       @click="startCalibration"
       class="calibrate-btn"
     >
@@ -227,5 +226,23 @@ defineExpose({
 
 .calibrate-btn:hover {
   background: #444;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #ef5350;
+}
+
+.retry-btn {
+  padding: 2px 8px;
+  background: #ef5350;
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
 }
 </style>

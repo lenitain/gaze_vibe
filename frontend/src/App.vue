@@ -19,6 +19,8 @@ const userPreference = ref({
   finalChoice: null
 })
 
+const choiceSaved = ref(false)
+
 async function handleSubmit(prompt) {
   isLoading.value = true
   
@@ -47,14 +49,24 @@ async function handleSubmit(prompt) {
   }
 }
 
-function handleChoice(side) {
+async function handleChoice(side) {
   userPreference.value.finalChoice = side
   if (eyeTrackerRef.value) {
     eyeTrackerRef.value.stopTracking()
     isEyeTracking.value = false
   }
-  
-  console.log('User choice:', side, 'Preference data:', userPreference.value)
+
+  try {
+    await fetch('/api/preference', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preference: userPreference.value })
+    })
+    choiceSaved.value = true
+    setTimeout(() => { choiceSaved.value = false }, 3000)
+  } catch (err) {
+    console.error('Save preference failed:', err)
+  }
 }
 
 function handleEyeData(data) {
@@ -103,6 +115,10 @@ function handleRegionSwitch() {
       @data="handleEyeData"
       @region-switch="handleRegionSwitch"
     />
+
+    <transition name="fade">
+      <div v-if="choiceSaved" class="toast">偏好已保存</div>
+    </transition>
   </div>
 </template>
 
@@ -162,5 +178,28 @@ function handleRegionSwitch() {
   border-radius: 8px;
   font-size: 14px;
   color: #4fc3f7;
+}
+
+.toast {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  padding: 10px 20px;
+  background: #4fc3f7;
+  color: #000;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 200;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

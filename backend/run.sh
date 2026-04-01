@@ -22,5 +22,4 @@ uv pip install -r requirements.txt
 
 # 运行应用
 echo "启动后端服务..."
-export OPENAI_API_KEY="${OPENAI_API_KEY:-your-api-key-here}"
 uv run python app.py
