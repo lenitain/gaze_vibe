@@ -23,7 +23,7 @@ async function selectFolder() {
 
   try {
     const dirHandle = await window.showDirectoryPicker({
-      mode: 'read'
+      mode: 'readwrite'
     })
 
     folderName.value = dirHandle.name

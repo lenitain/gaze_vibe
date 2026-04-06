@@ -1,19 +1,46 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
+import { parseCodeBlocks, extractFilePath } from '../utils/codeParser.js'
+import DiffPreview from './DiffPreview.vue'
 
 const props = defineProps({
   answerA: String,
   answerB: String,
-  isLoading: Boolean
+  isLoading: Boolean,
+  files: Array
 })
 
-const emit = defineEmits(['choice'])
+const emit = defineEmits(['choice', 'apply-change'])
 
 const selectedSide = ref(null)
+const codeBlocksA = ref([])
+const codeBlocksB = ref([])
+const diffState = ref(null)
 
-// 提供给 EyeTracker 识别的区域 ID
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
+
+watch(() => props.answerA, (text) => {
+  if (text) {
+    codeBlocksA.value = parseCodeBlocks(text).map(block => ({
+      ...block,
+      filePath: extractFilePath(block, text, props.files || [])
+    }))
+  } else {
+    codeBlocksA.value = []
+  }
+}, { immediate: true })
+
+watch(() => props.answerB, (text) => {
+  if (text) {
+    codeBlocksB.value = parseCodeBlocks(text).map(block => ({
+      ...block,
+      filePath: extractFilePath(block, text, props.files || [])
+    }))
+  } else {
+    codeBlocksB.value = []
+  }
+}, { immediate: true })
 
 function selectA() {
   selectedSide.value = 'A'
@@ -25,7 +52,34 @@ function selectB() {
   emit('choice', 'B')
 }
 
-// 暴露区域元素 ID 给父组件
+function showDiff(block) {
+  if (!block.filePath) return
+
+  const file = props.files?.find(f => f.path === block.filePath)
+  if (!file) return
+
+  diffState.value = {
+    filePath: block.filePath,
+    originalContent: file.content,
+    newContent: block.code
+  }
+}
+
+function hideDiff() {
+  diffState.value = null
+}
+
+async function applyChange() {
+  if (!diffState.value) return
+
+  emit('apply-change', {
+    filePath: diffState.value.filePath,
+    content: diffState.value.newContent
+  })
+
+  hideDiff()
+}
+
 defineExpose({
   regionAId,
   regionBId
@@ -43,10 +97,31 @@ defineExpose({
           <div class="spinner"></div>
           <span>生成中...</span>
         </div>
-        <pre v-else>{{ answerA || '等待输入问题...' }}</pre>
+        <template v-else>
+          <pre>{{ answerA || '等待输入问题...' }}</pre>
+          <div v-if="codeBlocksA.length > 0" class="code-blocks">
+            <div
+              v-for="(block, index) in codeBlocksA"
+              :key="index"
+              class="code-block"
+            >
+              <div class="block-header">
+                <span class="block-lang">{{ block.lang || 'code' }}</span>
+                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
+                <button
+                  v-if="block.filePath"
+                  class="apply-btn"
+                  @click="showDiff(block)"
+                >
+                  应用到文件
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
-      <button 
-        class="choose-btn" 
+      <button
+        class="choose-btn"
         @click="selectA"
         :disabled="!answerA || isLoading"
       >
@@ -65,16 +140,46 @@ defineExpose({
           <div class="spinner"></div>
           <span>生成中...</span>
         </div>
-        <pre v-else>{{ answerB || '等待输入问题...' }}</pre>
+        <template v-else>
+          <pre>{{ answerB || '等待输入问题...' }}</pre>
+          <div v-if="codeBlocksB.length > 0" class="code-blocks">
+            <div
+              v-for="(block, index) in codeBlocksB"
+              :key="index"
+              class="code-block"
+            >
+              <div class="block-header">
+                <span class="block-lang">{{ block.lang || 'code' }}</span>
+                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
+                <button
+                  v-if="block.filePath"
+                  class="apply-btn"
+                  @click="showDiff(block)"
+                >
+                  应用到文件
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
-      <button 
-        class="choose-btn" 
+      <button
+        class="choose-btn"
         @click="selectB"
         :disabled="!answerB || isLoading"
       >
         选择此答案
       </button>
     </div>
+
+    <DiffPreview
+      v-if="diffState"
+      :file-path="diffState.filePath"
+      :original-content="diffState.originalContent"
+      :new-content="diffState.newContent"
+      :on-apply="applyChange"
+      :on-cancel="hideDiff"
+    />
   </div>
 </template>
 
@@ -161,6 +266,58 @@ defineExpose({
 .divider {
   width: 2px;
   background: var(--bg3);
+}
+
+.code-blocks {
+  margin-top: 16px;
+  border-top: 1px solid var(--bg3);
+  padding-top: 12px;
+}
+
+.code-block {
+  margin-bottom: 8px;
+}
+
+.block-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg2);
+  border-radius: 6px;
+}
+
+.block-lang {
+  font-size: var(--font-xs);
+  color: var(--grey1);
+  padding: 2px 8px;
+  background: var(--bg3);
+  border-radius: 4px;
+}
+
+.block-file {
+  font-size: var(--font-xs);
+  color: var(--aqua);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.apply-btn {
+  padding: 4px 10px;
+  background: var(--green);
+  color: var(--bg0);
+  border: none;
+  border-radius: 4px;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.apply-btn:hover {
+  background: var(--aqua);
 }
 
 .choose-btn {

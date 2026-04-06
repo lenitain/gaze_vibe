@@ -102,6 +102,27 @@ async function handleChoice(side) {
   }
 }
 
+async function handleApplyChange({ filePath, content }) {
+  try {
+    await fileIndexer.writeFile(filePath, content)
+
+    const file = indexedFiles.value.find(f => f.path === filePath)
+    if (file) {
+      file.content = content
+    }
+
+    if (selectedFile.value?.path === filePath) {
+      selectedFile.value = { ...selectedFile.value, content }
+    }
+
+    choiceSaved.value = true
+    setTimeout(() => { choiceSaved.value = false }, 2000)
+  } catch (err) {
+    console.error('Write file failed:', err)
+    alert('写入文件失败: ' + err.message)
+  }
+}
+
 function handleEyeData(data) {
   if (data.region === 'A') {
     userPreference.value.timeOnA += data.duration
@@ -173,7 +194,9 @@ function handleRegionSwitch({ from, to }) {
             :answerA="answerA"
             :answerB="answerB"
             :is-loading="isLoading"
+            :files="indexedFiles"
             @choice="handleChoice"
+            @apply-change="handleApplyChange"
           />
         </div>
 
