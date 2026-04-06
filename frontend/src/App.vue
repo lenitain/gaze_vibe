@@ -3,9 +3,17 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import AnswerPanel from './components/AnswerPanel.vue'
 import ChatInput from './components/ChatInput.vue'
 import EyeTracker from './components/EyeTracker.vue'
+import FolderSelector from './components/FolderSelector.vue'
+import { FileIndexer } from './utils/fileIndexer.js'
+import { selectRelevantFiles, formatFilesForPrompt } from './utils/fileSelector.js'
 
 const isEyeTracking = ref(false)
 const eyeTrackerRef = ref(null)
+
+const showFolderSelector = ref(true)
+const projectFolder = ref(null)
+const fileIndexer = new FileIndexer()
+const indexedFiles = ref([])
 
 const answerA = ref('')
 const answerB = ref('')
@@ -21,16 +29,32 @@ const userPreference = ref({
 
 const choiceSaved = ref(false)
 
+async function handleFolderSelect(dirHandle) {
+  projectFolder.value = dirHandle
+  showFolderSelector.value = false
+
+  try {
+    indexedFiles.value = await fileIndexer.indexDirectory(dirHandle)
+    console.log(`Indexed ${indexedFiles.value.length} files from ${dirHandle.name}`)
+  } catch (err) {
+    console.error('Failed to index directory:', err)
+  }
+}
+
 async function handleSubmit(prompt) {
   isLoading.value = true
-  
+
   try {
+    const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
+    const contextFiles = formatFilesForPrompt(relevantFiles)
+
     const response = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         prompt,
-        preference: userPreference.value
+        preference: userPreference.value,
+        contextFiles
       })
     })
     
@@ -88,9 +112,20 @@ function handleRegionSwitch({ from, to }) {
 
 <template>
   <div class="container">
+    <FolderSelector
+      v-if="showFolderSelector"
+      @select="handleFolderSelect"
+    />
+
     <header class="header">
       <h1>GazeVibe</h1>
       <p class="subtitle">眼动追踪 AI 编程助手</p>
+      <p v-if="projectFolder" class="project-name">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+        </svg>
+        {{ projectFolder.name }}
+      </p>
     </header>
 
     <main class="main">
@@ -148,6 +183,16 @@ function handleRegionSwitch({ from, to }) {
 .subtitle {
   color: #888;
   margin-top: 8px;
+}
+
+.project-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: #4fc3f7;
+  font-size: 14px;
 }
 
 .main {

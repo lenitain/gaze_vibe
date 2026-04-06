@@ -21,11 +21,12 @@ client = openai.OpenAI(
 )
 
 
-def generate_dual_answers(prompt, preference=None):
+def generate_dual_answers(prompt, preference=None, context_files=None):
     """
     生成两个不同风格的答案
     - answerA: 详细解释风格
     - answerB: 简洁代码风格
+    - context_files: 项目文件上下文
     """
 
     # 构建系统提示词
@@ -43,6 +44,16 @@ def generate_dual_answers(prompt, preference=None):
 - 最少的必要解释
 - 直接可用的代码
 - 如果有多种方案，只给出最好的那个"""
+
+    # 添加项目文件上下文
+    if context_files:
+        context_text = "\n\n## 项目文件上下文\n\n"
+        for file in context_files:
+            context_text += f"### {file['path']}\n\n```{file.get('lang', '')}\n{file['content']}\n```\n\n"
+        context_text += "请基于以上项目代码上下文回答用户的问题。\n"
+
+        system_a += context_text
+        system_b += context_text
 
     # 如果有用户偏好，调整回答策略
     if preference:
@@ -102,11 +113,12 @@ def ask():
     data = request.json
     prompt = data.get("prompt", "")
     preference = data.get("preference", {})
+    context_files = data.get("contextFiles", [])
 
     if not prompt:
         return jsonify({"error": "请输入问题"}), 400
 
-    result = generate_dual_answers(prompt, preference)
+    result = generate_dual_answers(prompt, preference, context_files)
     return jsonify(result)
 
 
