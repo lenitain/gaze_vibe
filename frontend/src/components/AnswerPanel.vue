@@ -16,64 +16,33 @@ const selectedSide = ref(null)
 const diffState = ref(null)
 const fileChanges = ref(new Map())
 const expandedBlocks = ref(new Set())
+const manualFilePicks = ref(new Map())
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
 
-const allCodeBlocks = computed(() => {
-  const blocksA = props.answerA ? parseCodeBlocks(props.answerA) : []
-  const blocksB = props.answerB ? parseCodeBlocks(props.answerB) : []
-
-  const fileBlocks = new Map()
-
-  for (const block of blocksA) {
-    const filePath = extractFilePath(block, props.answerA, props.files || [])
-    if (filePath && !fileBlocks.has(filePath)) {
-      fileBlocks.set(filePath, {
-        ...block,
-        filePath,
-        source: 'A'
-      })
+function resolveBlocksForAnswer(answer, source) {
+  if (!answer) return []
+  const rawBlocks = parseCodeBlocks(answer)
+  return rawBlocks.map((block, index) => {
+    const filePath = extractFilePath(block, answer, props.files || [])
+    const blockId = `${source}-${index}`
+    const manualPick = manualFilePicks.value.get(blockId)
+    return {
+      ...block,
+      blockId,
+      filePath: filePath || manualPick || null,
+      autoMatched: !!filePath,
+      source
     }
-  }
-
-  for (const block of blocksB) {
-    const filePath = extractFilePath(block, props.answerB, props.files || [])
-    if (filePath && !fileBlocks.has(filePath)) {
-      fileBlocks.set(filePath, {
-        ...block,
-        filePath,
-        source: 'B'
-      })
-    }
-  }
-
-  return fileBlocks
-})
-
-const codeBlocksA = computed(() => {
-  const blocks = []
-  allCodeBlocks.value.forEach((block, filePath) => {
-    if (block.source === 'A') blocks.push(block)
   })
-  return blocks
-})
+}
 
-const codeBlocksB = computed(() => {
-  const blocks = []
-  allCodeBlocks.value.forEach((block, filePath) => {
-    if (block.source === 'B') blocks.push(block)
-  })
-  return blocks
-})
+const codeBlocksA = computed(() => resolveBlocksForAnswer(props.answerA, 'A'))
+const codeBlocksB = computed(() => resolveBlocksForAnswer(props.answerB, 'B'))
 
-const answerTextA = computed(() => {
-  return props.answerA ? stripCodeBlocks(props.answerA) : ''
-})
-
-const answerTextB = computed(() => {
-  return props.answerB ? stripCodeBlocks(props.answerB) : ''
-})
+const answerTextA = computed(() => props.answerA ? stripCodeBlocks(props.answerA) : '')
+const answerTextB = computed(() => props.answerB ? stripCodeBlocks(props.answerB) : '')
 
 const stagedCount = computed(() => fileChanges.value.size)
 
@@ -99,11 +68,19 @@ function isBlockExpanded(blockId) {
   return expandedBlocks.value.has(blockId)
 }
 
-function handleBlockClick(block) {
+function handleManualPick(blockId, event) {
+  const filePath = event.target.value
+  if (filePath) {
+    manualFilePicks.value.set(blockId, filePath)
+  } else {
+    manualFilePicks.value.delete(blockId)
+  }
+}
+
+function handleApplyClick(block) {
   if (!block.filePath) return
 
   const existing = fileChanges.value.get(block.filePath)
-
   if (existing) {
     fileChanges.value.delete(block.filePath)
     emit('unapply-change', { filePath: block.filePath })
@@ -131,12 +108,7 @@ function applyChange() {
 
   const { filePath, newContent } = diffState.value
   fileChanges.value.set(filePath, { content: newContent })
-
-  emit('apply-change', {
-    filePath,
-    content: newContent
-  })
-
+  emit('apply-change', { filePath, content: newContent })
   hideDiff()
 }
 
@@ -148,7 +120,7 @@ function getBtnText(filePath) {
   return fileChanges.value.has(filePath) ? '已暂存 (取消)' : '暂存修改'
 }
 
-function getChooseBtnText(side) {
+function getChooseBtnText() {
   if (stagedCount.value > 0) {
     return `选择此答案 (${stagedCount.value} 个文件待提交)`
   }
@@ -160,6 +132,7 @@ defineExpose({
   regionBId,
   commitAll: () => {
     fileChanges.value.clear()
+    manualFilePicks.value.clear()
   }
 })
 </script>
@@ -169,7 +142,7 @@ defineExpose({
     <div class="answer-col" :id="regionAId">
       <div class="answer-header">
         <span class="badge detailed">详细解答</span>
-        <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个文件</span>
+        <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个代码块</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'A' }">
         <div v-if="isLoading" class="loading">
@@ -181,25 +154,35 @@ defineExpose({
           <div v-if="!answerA" class="placeholder">等待输入问题...</div>
           <div v-if="codeBlocksA.length > 0" class="code-blocks">
             <div
-              v-for="(block, index) in codeBlocksA"
-              :key="index"
+              v-for="block in codeBlocksA"
+              :key="block.blockId"
               class="code-block"
-              :class="{ staged: fileChanges.has(block.filePath) }"
+              :class="{ staged: block.filePath && fileChanges.has(block.filePath) }"
             >
-              <div class="block-header" @click="toggleBlock('A-' + index)">
-                <span class="toggle-icon">{{ isBlockExpanded('A-' + index) ? '▼' : '▶' }}</span>
+              <div class="block-header" @click="toggleBlock(block.blockId)">
+                <span class="toggle-icon">{{ isBlockExpanded(block.blockId) ? '▼' : '▶' }}</span>
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
-                <span class="block-file">{{ block.filePath }}</span>
-                <span v-if="fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
+                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
+                <select
+                  v-else
+                  class="file-pick-select"
+                  @click.stop
+                  @change="handleManualPick(block.blockId, $event)"
+                >
+                  <option value="">选择目标文件...</option>
+                  <option v-for="f in files" :key="f.path" :value="f.path">{{ f.path }}</option>
+                </select>
+                <span v-if="block.filePath && fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
                 <button
+                  v-if="block.filePath"
                   class="apply-btn"
                   :class="getBtnClass(block.filePath)"
-                  @click.stop="handleBlockClick(block)"
+                  @click.stop="handleApplyClick(block)"
                 >
                   {{ getBtnText(block.filePath) }}
                 </button>
               </div>
-              <div v-if="isBlockExpanded('A-' + index)" class="block-code">
+              <div v-if="isBlockExpanded(block.blockId)" class="block-code">
                 <pre>{{ block.code }}</pre>
               </div>
             </div>
@@ -212,7 +195,7 @@ defineExpose({
         @click="selectA"
         :disabled="!answerA || isLoading"
       >
-        {{ getChooseBtnText('A') }}
+        {{ getChooseBtnText() }}
       </button>
     </div>
 
@@ -221,7 +204,7 @@ defineExpose({
     <div class="answer-col" :id="regionBId">
       <div class="answer-header">
         <span class="badge concise">简洁解答</span>
-        <span v-if="codeBlocksB.length > 0" class="block-count">{{ codeBlocksB.length }} 个文件</span>
+        <span v-if="codeBlocksB.length > 0" class="block-count">{{ codeBlocksB.length }} 个代码块</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'B' }">
         <div v-if="isLoading" class="loading">
@@ -233,25 +216,35 @@ defineExpose({
           <div v-if="!answerB" class="placeholder">等待输入问题...</div>
           <div v-if="codeBlocksB.length > 0" class="code-blocks">
             <div
-              v-for="(block, index) in codeBlocksB"
-              :key="index"
+              v-for="block in codeBlocksB"
+              :key="block.blockId"
               class="code-block"
-              :class="{ staged: fileChanges.has(block.filePath) }"
+              :class="{ staged: block.filePath && fileChanges.has(block.filePath) }"
             >
-              <div class="block-header" @click="toggleBlock('B-' + index)">
-                <span class="toggle-icon">{{ isBlockExpanded('B-' + index) ? '▼' : '▶' }}</span>
+              <div class="block-header" @click="toggleBlock(block.blockId)">
+                <span class="toggle-icon">{{ isBlockExpanded(block.blockId) ? '▼' : '▶' }}</span>
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
-                <span class="block-file">{{ block.filePath }}</span>
-                <span v-if="fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
+                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
+                <select
+                  v-else
+                  class="file-pick-select"
+                  @click.stop
+                  @change="handleManualPick(block.blockId, $event)"
+                >
+                  <option value="">选择目标文件...</option>
+                  <option v-for="f in files" :key="f.path" :value="f.path">{{ f.path }}</option>
+                </select>
+                <span v-if="block.filePath && fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
                 <button
+                  v-if="block.filePath"
                   class="apply-btn"
                   :class="getBtnClass(block.filePath)"
-                  @click.stop="handleBlockClick(block)"
+                  @click.stop="handleApplyClick(block)"
                 >
                   {{ getBtnText(block.filePath) }}
                 </button>
               </div>
-              <div v-if="isBlockExpanded('B-' + index)" class="block-code">
+              <div v-if="isBlockExpanded(block.blockId)" class="block-code">
                 <pre>{{ block.code }}</pre>
               </div>
             </div>
@@ -264,7 +257,7 @@ defineExpose({
         @click="selectB"
         :disabled="!answerB || isLoading"
       >
-        {{ getChooseBtnText('B') }}
+        {{ getChooseBtnText() }}
       </button>
     </div>
 
@@ -431,6 +424,22 @@ defineExpose({
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.file-pick-select {
+  flex: 1;
+  font-size: var(--font-xs);
+  padding: 3px 6px;
+  background: var(--bg0);
+  color: var(--yellow);
+  border: 1px solid var(--yellow);
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+}
+
+.file-pick-select:focus {
+  border-color: var(--aqua);
 }
 
 .staged-badge {
