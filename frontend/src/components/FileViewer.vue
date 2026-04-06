@@ -6,7 +6,8 @@ const props = defineProps({
 })
 
 const content = ref('')
-const lineCount = computed(() => content.value.split('\n').length)
+const lines = computed(() => content.value.split('\n'))
+const lineCount = computed(() => lines.value.length)
 
 watch(() => props.file, async (newFile) => {
   if (newFile && newFile.content) {
@@ -25,10 +26,14 @@ watch(() => props.file, async (newFile) => {
     </div>
 
     <div class="viewer-content" v-if="file">
-      <div class="line-numbers">
-        <span v-for="n in lineCount" :key="n">{{ n }}</span>
-      </div>
-      <pre class="code-content">{{ content }}</pre>
+      <table class="code-table">
+        <tbody>
+          <tr v-for="(line, index) in lines" :key="index">
+            <td class="line-number">{{ index + 1 }}</td>
+            <td class="line-content">{{ line || ' ' }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <div class="empty" v-else>
@@ -60,6 +65,7 @@ watch(() => props.file, async (newFile) => {
   padding: 12px 16px;
   background: var(--bg1);
   border-bottom: 1px solid var(--bg3);
+  flex-shrink: 0;
 }
 
 .file-path {
@@ -75,36 +81,34 @@ watch(() => props.file, async (newFile) => {
 
 .viewer-content {
   flex: 1;
-  display: flex;
   overflow: auto;
+}
+
+.code-table {
+  border-collapse: collapse;
+  width: 100%;
   font-family: 'Fira Code', 'Consolas', monospace;
   font-size: 13px;
   line-height: 1.6;
 }
 
-.line-numbers {
-  display: flex;
-  flex-direction: column;
-  padding: 16px 12px;
+.line-number {
+  padding: 0 12px 0 16px;
+  text-align: right;
+  color: var(--grey0);
   background: var(--bg1);
   border-right: 1px solid var(--bg3);
-  text-align: right;
   user-select: none;
-  color: var(--grey0);
-  font-size: 12px;
+  white-space: nowrap;
+  position: sticky;
+  left: 0;
+  z-index: 1;
 }
 
-.line-numbers span {
-  line-height: 1.6;
-}
-
-.code-content {
-  flex: 1;
-  padding: 16px;
-  margin: 0;
+.line-content {
+  padding: 0 16px;
   white-space: pre;
   color: var(--fg);
-  background: transparent;
 }
 
 .empty {
