@@ -109,13 +109,18 @@ async function startTracking() {
       await webgazer.resume()
     }
 
-    webgazer.showVideoElement(true)
     webgazer.showPredictionPoints(true)
     isTracking.value = true
     cameraReady.value = true
     gazeCount.value = 0
     currentRegion = null
     regionStartTime = null
+
+    const videoEl = document.getElementById('webgazerVideoFeed')
+    if (videoEl) videoEl.style.display = 'block'
+
+    const videoContainer = document.getElementById('webgazerVideoContainer')
+    if (videoContainer) videoContainer.style.display = 'block'
 
     console.log('追踪已启动')
   } catch (err) {
@@ -127,10 +132,15 @@ function stopTracking() {
   if (webgazer) {
     flushRegion()
     webgazer.pause()
-    webgazer.showVideoElement(false)
     webgazer.showPredictionPoints(false)
     isTracking.value = false
     currentRegion = null
+
+    const videoEl = document.getElementById('webgazerVideoFeed')
+    if (videoEl) videoEl.style.display = 'none'
+
+    const videoContainer = document.getElementById('webgazerVideoContainer')
+    if (videoContainer) videoContainer.style.display = 'none'
   }
 }
 
