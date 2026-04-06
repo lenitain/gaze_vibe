@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { parseCodeBlocks, extractFilePath, stripCodeBlocks } from '../utils/codeParser.js'
+import { parseCodeBlocks, extractFilePath, stripCodeBlocks, isFileApplicable } from '../utils/codeParser.js'
 import DiffPreview from './DiffPreview.vue'
 
 const props = defineProps({
@@ -21,25 +21,44 @@ const manualFilePicks = ref(new Map())
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
 
-function resolveBlocksForAnswer(answer, source) {
-  if (!answer) return []
-  const rawBlocks = parseCodeBlocks(answer)
-  return rawBlocks.map((block, index) => {
-    const filePath = extractFilePath(block, answer, props.files || [])
-    const blockId = `${source}-${index}`
-    const manualPick = manualFilePicks.value.get(blockId)
-    return {
-      ...block,
-      blockId,
-      filePath: filePath || manualPick || null,
-      autoMatched: !!filePath,
-      source
-    }
-  })
-}
+const allResolvedBlocks = computed(() => {
+  const fileIndex = props.files || []
+  const usedPaths = new Set()
+  const results = []
 
-const codeBlocksA = computed(() => resolveBlocksForAnswer(props.answerA, 'A'))
-const codeBlocksB = computed(() => resolveBlocksForAnswer(props.answerB, 'B'))
+  function resolveAnswer(answer, source) {
+    if (!answer) return
+    const rawBlocks = parseCodeBlocks(answer)
+
+    for (let index = 0; index < rawBlocks.length; index++) {
+      const block = rawBlocks[index]
+      const blockId = `${source}-${index}`
+      const autoPath = extractFilePath(block, answer, fileIndex)
+      const manualPick = manualFilePicks.value.get(blockId)
+      const filePath = autoPath || manualPick || null
+
+      if (!filePath && !isFileApplicable(block)) continue
+      if (filePath && usedPaths.has(filePath)) continue
+
+      if (filePath) usedPaths.add(filePath)
+
+      results.push({
+        ...block,
+        blockId,
+        filePath,
+        autoMatched: !!autoPath,
+        source
+      })
+    }
+  }
+
+  resolveAnswer(props.answerA, 'A')
+  resolveAnswer(props.answerB, 'B')
+  return results
+})
+
+const codeBlocksA = computed(() => allResolvedBlocks.value.filter(b => b.source === 'A'))
+const codeBlocksB = computed(() => allResolvedBlocks.value.filter(b => b.source === 'B'))
 
 const answerTextA = computed(() => props.answerA ? stripCodeBlocks(props.answerA) : '')
 const answerTextB = computed(() => props.answerB ? stripCodeBlocks(props.answerB) : '')
@@ -142,7 +161,7 @@ defineExpose({
     <div class="answer-col" :id="regionAId">
       <div class="answer-header">
         <span class="badge detailed">详细解答</span>
-        <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个代码块</span>
+        <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个文件</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'A' }">
         <div v-if="isLoading" class="loading">
@@ -204,7 +223,7 @@ defineExpose({
     <div class="answer-col" :id="regionBId">
       <div class="answer-header">
         <span class="badge concise">简洁解答</span>
-        <span v-if="codeBlocksB.length > 0" class="block-count">{{ codeBlocksB.length }} 个代码块</span>
+        <span v-if="codeBlocksB.length > 0" class="block-count">{{ codeBlocksB.length }} 个文件</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'B' }">
         <div v-if="isLoading" class="loading">

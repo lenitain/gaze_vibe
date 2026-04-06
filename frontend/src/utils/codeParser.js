@@ -51,6 +51,24 @@ export function extractFilePath(block, text, nearbyFiles) {
   return null
 }
 
+export function isFileApplicable(block) {
+  const code = block.code
+
+  if (code.split('\n').length < 3) return false
+
+  if (/^(npm|yarn|pnpm|bun|pip|cargo|go)\s/.test(code)) return false
+  if (/^(mkdir|cd|ls|cp|mv|rm|cat|echo|chmod)\s/.test(code)) return false
+  if (/^(git|docker|kubectl)\s/.test(code)) return false
+
+  if (/^(import|from|require|use|mod)\s/.test(code)) return true
+  if (/^(export|module\.exports|pub)\s/.test(code)) return true
+  if (/^\s*(function|class|interface|type|const|let|var|def|fn|struct|enum)\s/m.test(code)) return true
+  if (/^\s*(public|private|protected|async|static)\s/m.test(code)) return true
+  if (/=>\s*[{(]/.test(code) || /\{\s*$/.test(code)) return true
+
+  return false
+}
+
 export function stripCodeBlocks(text) {
   return text.replace(/```(\w*)\s*\n[\s\S]*?```/g, '').replace(/\n{3,}/g, '\n\n').trim()
 }
