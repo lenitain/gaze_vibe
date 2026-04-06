@@ -10,7 +10,7 @@ let cameraError = ref('')
 let gazeCount = ref(0)
 let isInitialized = ref(false)
 
-let currentRegion = null
+let currentRegion = ref(null)
 let regionStartTime = null
 
 let isCalibrating = ref(false)
@@ -40,11 +40,11 @@ function getRegion(x) {
   const w = window.innerWidth
   const third = w / 3
 
-  if (currentRegion === 'A') {
+  if (currentRegion.value === 'A') {
     if (x > third * 2) return 'B'
     return 'A'
   }
-  if (currentRegion === 'B') {
+  if (currentRegion.value === 'B') {
     if (x < third) return 'A'
     return 'B'
   }
@@ -52,10 +52,10 @@ function getRegion(x) {
 }
 
 function flushRegion() {
-  if (currentRegion && regionStartTime) {
+  if (currentRegion.value && regionStartTime) {
     const duration = Date.now() - regionStartTime
     if (duration > 0) {
-      emit('data', { region: currentRegion, duration })
+      emit('data', { region: currentRegion.value, duration })
     }
   }
   regionStartTime = null
@@ -93,10 +93,10 @@ async function startTracking() {
 
         const region = getRegion(data.x)
 
-        if (region !== currentRegion) {
+        if (region !== currentRegion.value) {
           flushRegion()
-          const from = currentRegion
-          currentRegion = region
+          const from = currentRegion.value
+          currentRegion.value = region
           regionStartTime = Date.now()
           if (from) {
             emit('region-switch', { from, to: region })
@@ -113,7 +113,7 @@ async function startTracking() {
     isTracking.value = true
     cameraReady.value = true
     gazeCount.value = 0
-    currentRegion = null
+    currentRegion.value = null
     regionStartTime = null
 
     const videoEl = document.getElementById('webgazerVideoFeed')
@@ -134,7 +134,7 @@ function stopTracking() {
     webgazer.pause()
     webgazer.showPredictionPoints(false)
     isTracking.value = false
-    currentRegion = null
+    currentRegion.value = null
 
     const videoEl = document.getElementById('webgazerVideoFeed')
     if (videoEl) videoEl.style.display = 'none'
@@ -214,9 +214,9 @@ defineExpose({
       {{ cameraError }}
       <button @click="startTracking" class="retry-btn">重试</button>
     </div>
-    <div v-else class="status" :class="{ active: isTracking }">
+    <div v-else class="status" :class="{ active: isTracking, 'region-a': currentRegion === 'A', 'region-b': currentRegion === 'B' }">
       <span class="dot"></span>
-      <span>{{ isTracking ? `追踪中 (${gazeCount})` : '等待启动' }}</span>
+      <span>{{ isTracking ? `追踪中 - ${currentRegion === 'A' ? '详细解答' : currentRegion === 'B' ? '简洁解答' : '...'}` : '等待启动' }}</span>
     </div>
 
     <button
@@ -269,6 +269,12 @@ defineExpose({
 }
 
 .status.active { color: var(--blue); }
+
+.status.region-a { color: var(--blue); }
+.status.region-b { color: var(--green); }
+
+.status.region-a .dot { background: var(--blue); animation: pulse 2s infinite; }
+.status.region-b .dot { background: var(--green); animation: pulse 2s infinite; }
 
 .dot {
   width: 8px;
