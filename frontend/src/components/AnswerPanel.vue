@@ -10,13 +10,13 @@ const props = defineProps({
   files: Array
 })
 
-const emit = defineEmits(['choice', 'apply-change', 'diff-toggle'])
+const emit = defineEmits(['choice', 'apply-change', 'unapply-change', 'diff-toggle'])
 
 const selectedSide = ref(null)
 const codeBlocksA = ref([])
 const codeBlocksB = ref([])
 const diffState = ref(null)
-const appliedBlocks = ref(new Map())
+const pendingChanges = ref(new Map())
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -53,8 +53,16 @@ function selectB() {
   emit('choice', 'B')
 }
 
-function showDiff(block) {
+function handleBlockClick(block, source) {
   if (!block.filePath) return
+
+  const existing = pendingChanges.value.get(block.filePath)
+
+  if (existing && existing.source === source) {
+    pendingChanges.value.delete(block.filePath)
+    emit('unapply-change', { filePath: block.filePath })
+    return
+  }
 
   const file = props.files?.find(f => f.path === block.filePath)
   if (!file) return
@@ -62,7 +70,8 @@ function showDiff(block) {
   diffState.value = {
     filePath: block.filePath,
     originalContent: file.content,
-    newContent: block.code
+    newContent: block.code,
+    source
   }
   emit('diff-toggle', true)
 }
@@ -72,22 +81,36 @@ function hideDiff() {
   emit('diff-toggle', false)
 }
 
-async function applyChange() {
+function applyChange() {
   if (!diffState.value) return
 
-  const filePath = diffState.value.filePath
-  appliedBlocks.value.set(filePath, 'pending')
+  const { filePath, newContent, source } = diffState.value
+  pendingChanges.value.set(filePath, { content: newContent, source })
 
   emit('apply-change', {
     filePath,
-    content: diffState.value.newContent
+    content: newContent
   })
 
   hideDiff()
 }
 
 function getBlockStatus(filePath) {
-  return appliedBlocks.value.get(filePath) || null
+  return pendingChanges.value.get(filePath) || null
+}
+
+function getBlockBtnClass(filePath, source) {
+  const status = pendingChanges.value.get(filePath)
+  if (!status) return ''
+  if (status.source === source) return 'pending'
+  return 'other-side'
+}
+
+function getBlockBtnText(filePath, source) {
+  const status = pendingChanges.value.get(filePath)
+  if (!status) return '应用到文件'
+  if (status.source === source) return '已暂存 (点击取消)'
+  return '另一版本已暂存'
 }
 
 defineExpose({
@@ -95,11 +118,7 @@ defineExpose({
   regionBId,
   getBlockStatus,
   commitAll: () => {
-    appliedBlocks.value.forEach((status, key) => {
-      if (status === 'pending') {
-        appliedBlocks.value.set(key, 'committed')
-      }
-    })
+    pendingChanges.value.clear()
   }
 })
 </script>
@@ -129,10 +148,11 @@ defineExpose({
                 <button
                   v-if="block.filePath"
                   class="apply-btn"
-                  :class="getBlockStatus(block.filePath)"
-                  @click="showDiff(block)"
+                  :class="getBlockBtnClass(block.filePath, 'A')"
+                  :disabled="getBlockStatus(block.filePath)?.source === 'B'"
+                  @click="handleBlockClick(block, 'A')"
                 >
-                  {{ getBlockStatus(block.filePath) === 'committed' ? '已提交' : getBlockStatus(block.filePath) === 'pending' ? '已暂存' : '应用到文件' }}
+                  {{ getBlockBtnText(block.filePath, 'A') }}
                 </button>
               </div>
             </div>
@@ -173,10 +193,11 @@ defineExpose({
                 <button
                   v-if="block.filePath"
                   class="apply-btn"
-                  :class="getBlockStatus(block.filePath)"
-                  @click="showDiff(block)"
+                  :class="getBlockBtnClass(block.filePath, 'B')"
+                  :disabled="getBlockStatus(block.filePath)?.source === 'A'"
+                  @click="handleBlockClick(block, 'B')"
                 >
-                  {{ getBlockStatus(block.filePath) === 'committed' ? '已提交' : getBlockStatus(block.filePath) === 'pending' ? '已暂存' : '应用到文件' }}
+                  {{ getBlockBtnText(block.filePath, 'B') }}
                 </button>
               </div>
             </div>
@@ -337,7 +358,7 @@ defineExpose({
   transition: all 0.2s;
 }
 
-.apply-btn:hover {
+.apply-btn:hover:not(:disabled) {
   background: var(--aqua);
 }
 
@@ -346,9 +367,14 @@ defineExpose({
   color: var(--bg0);
 }
 
-.apply-btn.committed {
-  background: var(--green);
-  cursor: default;
+.apply-btn.pending:hover {
+  background: var(--red);
+}
+
+.apply-btn.other-side {
+  background: var(--bg3);
+  color: var(--grey1);
+  cursor: not-allowed;
 }
 
 .choose-btn {

@@ -92,6 +92,17 @@ async function handleChoice(side) {
     isEyeTracking.value = false
   }
 
+  for (const file of indexedFiles.value) {
+    if (file._originalContent) {
+      try {
+        await fileIndexer.writeFile(file.path, file.content)
+        delete file._originalContent
+      } catch (err) {
+        console.error(`写入文件失败: ${file.path}`, err)
+      }
+    }
+  }
+
   if (answerPanelRef.value) {
     answerPanelRef.value.commitAll()
   }
@@ -110,20 +121,29 @@ async function handleChoice(side) {
 }
 
 async function handleApplyChange({ filePath, content }) {
-  try {
-    await fileIndexer.writeFile(filePath, content)
+  const file = indexedFiles.value.find(f => f.path === filePath)
+  if (file) {
+    file._originalContent = file.content
+    file.content = content
+  }
 
-    const file = indexedFiles.value.find(f => f.path === filePath)
-    if (file) {
-      file.content = content
-    }
+  if (selectedFile.value?.path === filePath) {
+    selectedFile.value = { ...selectedFile.value, content }
+  }
+}
 
-    if (selectedFile.value?.path === filePath) {
-      selectedFile.value = { ...selectedFile.value, content }
+function handleUnapplyChange({ filePath }) {
+  const file = indexedFiles.value.find(f => f.path === filePath)
+  if (file && file._originalContent) {
+    file.content = file._originalContent
+    delete file._originalContent
+  }
+
+  if (selectedFile.value?.path === filePath) {
+    const originalFile = indexedFiles.value.find(f => f.path === filePath)
+    if (originalFile) {
+      selectedFile.value = { ...selectedFile.value, content: originalFile.content }
     }
-  } catch (err) {
-    console.error('Write file failed:', err)
-    alert('写入文件失败: ' + err.message)
   }
 }
 
@@ -210,6 +230,7 @@ function handleRegionSwitch({ from, to }) {
             :files="indexedFiles"
             @choice="handleChoice"
             @apply-change="handleApplyChange"
+            @unapply-change="handleUnapplyChange"
             @diff-toggle="handleDiffToggle"
           />
         </div>
