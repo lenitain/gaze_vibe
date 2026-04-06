@@ -103,7 +103,7 @@ async function selectFolder() {
 }
 
 h2 {
-  font-size: 24px;
+  font-size: var(--font-3xl);
   margin-bottom: 12px;
   color: var(--fg);
 }
@@ -112,14 +112,15 @@ h2 {
   color: var(--grey1);
   margin-bottom: 32px;
   line-height: 1.6;
+  font-size: var(--font-lg);
 }
 
 .select-btn {
   background: var(--blue);
   color: var(--bg0);
   border: none;
-  padding: 14px 32px;
-  font-size: 16px;
+  padding: 16px 36px;
+  font-size: var(--font-lg);
   font-weight: 500;
   border-radius: 8px;
   cursor: pointer;
@@ -154,7 +155,7 @@ h2 {
 .error {
   color: var(--red);
   margin-top: 16px;
-  font-size: 14px;
+  font-size: var(--font-sm);
 }
 
 .hint {
@@ -164,6 +165,6 @@ h2 {
   gap: 6px;
   margin-top: 24px;
   color: var(--grey0);
-  font-size: 13px;
+  font-size: var(--font-sm);
 }
 </style>

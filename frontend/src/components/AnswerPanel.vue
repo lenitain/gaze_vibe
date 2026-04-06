@@ -102,9 +102,9 @@ defineExpose({
 }
 
 .badge {
-  padding: 4px 12px;
+  padding: 5px 14px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
 }
 
@@ -123,8 +123,8 @@ defineExpose({
   padding: 16px;
   overflow-y: auto;
   font-family: 'Fira Code', 'Consolas', monospace;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: var(--font-base);
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--fg);
@@ -165,11 +165,12 @@ defineExpose({
 
 .choose-btn {
   margin: 12px 16px;
-  padding: 10px 16px;
+  padding: 12px 18px;
   background: var(--blue);
   color: var(--bg0);
   border: none;
   border-radius: 6px;
+  font-size: var(--font-base);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;

@@ -94,8 +94,8 @@ function getIcon(name) {
 .node-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: 6px;
+  padding: 5px 8px;
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -112,8 +112,8 @@ function getIcon(name) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   color: var(--grey1);
   transition: transform 0.15s;
 }
@@ -123,17 +123,17 @@ function getIcon(name) {
 }
 
 .arrow-spacer {
-  width: 16px;
+  width: 18px;
 }
 
 .icon {
-  font-size: 14px;
-  width: 20px;
+  font-size: var(--font-lg);
+  width: 22px;
   text-align: center;
 }
 
 .name {
-  font-size: 13px;
+  font-size: var(--font-sm);
   color: var(--fg);
   white-space: nowrap;
   overflow: hidden;

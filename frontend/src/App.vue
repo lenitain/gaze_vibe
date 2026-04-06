@@ -204,6 +204,7 @@ function handleRegionSwitch({ from, to }) {
   padding: 20px;
   background: var(--bg0);
   color: var(--fg);
+  font-size: var(--font-base);
 }
 
 .header {
@@ -213,13 +214,14 @@ function handleRegionSwitch({ from, to }) {
 }
 
 .header h1 {
-  font-size: 28px;
+  font-size: var(--font-4xl);
   color: var(--blue);
 }
 
 .subtitle {
   color: var(--grey1);
   margin-top: 8px;
+  font-size: var(--font-lg);
 }
 
 .project-name {
@@ -229,7 +231,7 @@ function handleRegionSwitch({ from, to }) {
   gap: 6px;
   margin-top: 8px;
   color: var(--aqua);
-  font-size: 14px;
+  font-size: var(--font-sm);
 }
 
 .main {
@@ -269,12 +271,12 @@ function handleRegionSwitch({ from, to }) {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 8px 14px;
   background: var(--bg1);
   border: 1px solid var(--bg3);
   border-radius: 6px;
   color: var(--grey1);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -305,13 +307,14 @@ function handleRegionSwitch({ from, to }) {
 }
 
 .welcome h2 {
-  font-size: 24px;
+  font-size: var(--font-3xl);
   margin-bottom: 16px;
   color: var(--fg);
 }
 
 .welcome p {
   color: var(--grey1);
+  font-size: var(--font-lg);
 }
 
 .welcome .hint {
@@ -319,7 +322,7 @@ function handleRegionSwitch({ from, to }) {
   padding: 12px 24px;
   background: var(--bg1);
   border-radius: 8px;
-  font-size: 14px;
+  font-size: var(--font-base);
   color: var(--aqua);
 }
 
@@ -331,7 +334,7 @@ function handleRegionSwitch({ from, to }) {
   background: var(--green);
   color: var(--bg0);
   border-radius: 6px;
-  font-size: 14px;
+  font-size: var(--font-sm);
   font-weight: 500;
   z-index: 200;
 }

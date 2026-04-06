@@ -43,16 +43,17 @@ function submit() {
 
 .chat-input input {
   flex: 1;
-  padding: 12px 16px;
+  padding: 14px 18px;
   background: var(--bg0);
   border: 1px solid var(--bg3);
   border-radius: 8px;
   color: var(--fg);
-  font-size: 14px;
+  font-size: var(--font-base);
 }
 
 .chat-input input::placeholder {
   color: var(--grey1);
+  font-size: var(--font-base);
 }
 
 .chat-input input:focus {
@@ -65,11 +66,12 @@ function submit() {
 }
 
 .chat-input button {
-  padding: 12px 24px;
+  padding: 14px 28px;
   background: var(--blue);
   color: var(--bg0);
   border: none;
   border-radius: 8px;
+  font-size: var(--font-base);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;

@@ -69,13 +69,13 @@ watch(() => props.file, async (newFile) => {
 }
 
 .file-path {
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--fg);
   font-family: 'Fira Code', 'Consolas', monospace;
 }
 
 .line-info {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--grey1);
 }
 
@@ -88,12 +88,12 @@ watch(() => props.file, async (newFile) => {
   border-collapse: collapse;
   width: 100%;
   font-family: 'Fira Code', 'Consolas', monospace;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: var(--font-base);
+  line-height: 1.7;
 }
 
 .line-number {
-  padding: 0 12px 0 16px;
+  padding: 0 14px 0 16px;
   text-align: right;
   color: var(--grey0);
   background: var(--bg1);
@@ -126,6 +126,6 @@ watch(() => props.file, async (newFile) => {
 }
 
 .empty p {
-  font-size: 14px;
+  font-size: var(--font-sm);
 }
 </style>

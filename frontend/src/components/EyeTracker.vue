@@ -244,7 +244,7 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--grey1);
 }
 
@@ -268,12 +268,12 @@ defineExpose({
 }
 
 .calibrate-btn {
-  padding: 6px 12px;
+  padding: 8px 14px;
   background: var(--bg3);
   color: var(--fg);
   border: none;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: background 0.2s;
 }
@@ -284,17 +284,17 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--red);
 }
 
 .retry-btn {
-  padding: 2px 8px;
+  padding: 4px 10px;
   background: var(--red);
   color: var(--bg0);
   border: none;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   cursor: pointer;
 }
 
@@ -335,7 +335,7 @@ defineExpose({
 }
 
 .click-hint {
-  font-size: 10px;
+  font-size: var(--font-xs);
   color: var(--bg0);
   font-weight: bold;
 }
@@ -346,9 +346,9 @@ defineExpose({
   left: 50%;
   transform: translateX(-50%);
   color: var(--fg);
-  font-size: 14px;
+  font-size: var(--font-base);
   background: var(--bg1);
-  padding: 8px 16px;
+  padding: 10px 20px;
   border-radius: 6px;
 }
 </style>

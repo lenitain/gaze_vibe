@@ -116,13 +116,13 @@ function selectFile(file) {
 }
 
 .header-title {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--fg);
 }
 
 .file-count {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--grey1);
 }
 
@@ -138,6 +138,6 @@ function selectFile(file) {
   align-items: center;
   justify-content: center;
   color: var(--grey1);
-  font-size: 13px;
+  font-size: var(--font-sm);
 }
 </style>
