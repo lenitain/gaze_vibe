@@ -16,6 +16,7 @@ const selectedSide = ref(null)
 const diffState = ref(null)
 const fileChangesA = ref(new Map())
 const fileChangesB = ref(new Map())
+const choiceDisabled = ref(false)
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -144,11 +145,13 @@ function getFileChanges(side) {
 
 function selectA() {
   selectedSide.value = 'A'
+  choiceDisabled.value = true
   emit('choice', 'A', Object.fromEntries(fileChangesA.value))
 }
 
 function selectB() {
   selectedSide.value = 'B'
+  choiceDisabled.value = true
   emit('choice', 'B', Object.fromEntries(fileChangesB.value))
 }
 
@@ -199,6 +202,12 @@ function getBtnText(filePath, source) {
 }
 
 function getChooseBtnText(side) {
+  if (choiceDisabled.value) {
+    if (selectedSide.value === side) {
+      return '已选择'
+    }
+    return '未选择'
+  }
   const count = side === 'B' ? stagedCountB.value : stagedCountA.value
   if (count > 0) {
     return `选择此答案 (${count} 个文件待提交)`
@@ -219,7 +228,14 @@ defineExpose({
 
 <template>
   <div class="answer-panel">
-    <div class="answer-col" :id="regionAId">
+    <div 
+      class="answer-col" 
+      :id="regionAId"
+      :class="{ 
+        selected: selectedSide === 'A',
+        hidden: choiceDisabled && selectedSide !== 'A'
+      }"
+    >
       <div class="answer-header">
         <span class="badge detailed">详细解答</span>
         <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个文件</span>
@@ -261,17 +277,24 @@ defineExpose({
       </div>
       <button
         class="choose-btn"
-        :class="{ 'has-staged': stagedCountA > 0 }"
+        :class="{ 'has-staged': stagedCountA > 0, 'selected': selectedSide === 'A' }"
         @click="selectA"
-        :disabled="!answerA || isLoading"
+        :disabled="!answerA || isLoading || choiceDisabled"
       >
         {{ getChooseBtnText('A') }}
       </button>
     </div>
 
-    <div class="divider"></div>
+    <div class="divider" :class="{ hidden: choiceDisabled }"></div>
 
-    <div class="answer-col" :id="regionBId">
+    <div 
+      class="answer-col" 
+      :id="regionBId"
+      :class="{ 
+        selected: selectedSide === 'B',
+        hidden: choiceDisabled && selectedSide !== 'B'
+      }"
+    >
       <div class="answer-header">
         <span class="badge concise">简洁解答</span>
         <span v-if="codeBlocksB.length > 0" class="block-count">{{ codeBlocksB.length }} 个文件</span>
@@ -313,9 +336,9 @@ defineExpose({
       </div>
       <button
         class="choose-btn"
-        :class="{ 'has-staged': stagedCountB > 0 }"
+        :class="{ 'has-staged': stagedCountB > 0, 'selected': selectedSide === 'B' }"
         @click="selectB"
-        :disabled="!answerB || isLoading"
+        :disabled="!answerB || isLoading || choiceDisabled"
       >
         {{ getChooseBtnText('B') }}
       </button>
@@ -348,6 +371,20 @@ defineExpose({
   background: var(--bg1);
   border-radius: 12px;
   overflow: hidden;
+  transition: all 0.4s ease;
+}
+
+.answer-col.hidden {
+  flex: 0;
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
+}
+
+.answer-col.selected {
+  flex: 1;
 }
 
 .answer-header {
@@ -427,6 +464,12 @@ defineExpose({
 .divider {
   width: 2px;
   background: var(--bg3);
+  transition: all 0.4s ease;
+}
+
+.divider.hidden {
+  width: 0;
+  opacity: 0;
 }
 
 .code-blocks {
@@ -560,5 +603,15 @@ defineExpose({
   background: var(--bg3);
   color: var(--grey1);
   cursor: not-allowed;
+}
+
+.choose-btn.selected {
+  background: var(--green);
+  cursor: default;
+}
+
+.choose-btn.selected:disabled {
+  background: var(--green);
+  color: var(--bg0);
 }
 </style>
