@@ -235,7 +235,7 @@ defineExpose({
   align-items: center;
   gap: 12px;
   padding: 8px 16px;
-  background: #252526;
+  background: var(--bg1);
   border-radius: 20px;
   z-index: 100;
 }
@@ -245,20 +245,20 @@ defineExpose({
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #888;
+  color: var(--grey1);
 }
 
-.status.active { color: #4fc3f7; }
+.status.active { color: var(--blue); }
 
 .dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #555;
+  background: var(--bg3);
 }
 
 .status.active .dot {
-  background: #4fc3f7;
+  background: var(--blue);
   animation: pulse 2s infinite;
 }
 
@@ -269,8 +269,8 @@ defineExpose({
 
 .calibrate-btn {
   padding: 6px 12px;
-  background: #333;
-  color: #fff;
+  background: var(--bg3);
+  color: var(--fg);
   border: none;
   border-radius: 4px;
   font-size: 12px;
@@ -278,20 +278,20 @@ defineExpose({
   transition: background 0.2s;
 }
 
-.calibrate-btn:hover { background: #444; }
+.calibrate-btn:hover { background: var(--bg4); }
 
 .error {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #ef5350;
+  color: var(--red);
 }
 
 .retry-btn {
   padding: 2px 8px;
-  background: #ef5350;
-  color: #fff;
+  background: var(--red);
+  color: var(--bg0);
   border: none;
   border-radius: 3px;
   font-size: 11px;
@@ -310,7 +310,7 @@ defineExpose({
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #555;
+  background: var(--bg3);
   transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
@@ -319,14 +319,14 @@ defineExpose({
 }
 
 .calib-point.active {
-  background: #4fc3f7;
+  background: var(--blue);
   cursor: pointer;
   pointer-events: auto;
   animation: calib-pulse 1s infinite;
 }
 
 .calib-point.done {
-  background: #4caf50;
+  background: var(--green);
 }
 
 @keyframes calib-pulse {
@@ -336,7 +336,7 @@ defineExpose({
 
 .click-hint {
   font-size: 10px;
-  color: #000;
+  color: var(--bg0);
   font-weight: bold;
 }
 
@@ -345,9 +345,9 @@ defineExpose({
   bottom: 40px;
   left: 50%;
   transform: translateX(-50%);
-  color: #fff;
+  color: var(--fg);
   font-size: 14px;
-  background: rgba(0,0,0,0.6);
+  background: var(--bg1);
   padding: 8px 16px;
   border-radius: 6px;
 }

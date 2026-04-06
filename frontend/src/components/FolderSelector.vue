@@ -89,7 +89,7 @@ async function selectFolder() {
 }
 
 .selector-content {
-  background: #1e1e1e;
+  background: var(--bg0);
   border-radius: 12px;
   padding: 48px;
   text-align: center;
@@ -98,24 +98,25 @@ async function selectFolder() {
 }
 
 .icon {
-  color: #4fc3f7;
+  color: var(--blue);
   margin-bottom: 24px;
 }
 
 h2 {
   font-size: 24px;
   margin-bottom: 12px;
+  color: var(--fg);
 }
 
 .description {
-  color: #aaa;
+  color: var(--grey1);
   margin-bottom: 32px;
   line-height: 1.6;
 }
 
 .select-btn {
-  background: #4fc3f7;
-  color: #000;
+  background: var(--blue);
+  color: var(--bg0);
   border: none;
   padding: 14px 32px;
   font-size: 16px;
@@ -127,7 +128,7 @@ h2 {
 }
 
 .select-btn:hover:not(:disabled) {
-  background: #39b0e5;
+  background: var(--aqua);
   transform: translateY(-1px);
 }
 
@@ -141,7 +142,7 @@ h2 {
   width: 20px;
   height: 20px;
   border: 2px solid transparent;
-  border-top-color: #000;
+  border-top-color: var(--bg0);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -151,7 +152,7 @@ h2 {
 }
 
 .error {
-  color: #f44336;
+  color: var(--red);
   margin-top: 16px;
   font-size: 14px;
 }
@@ -162,7 +163,7 @@ h2 {
   justify-content: center;
   gap: 6px;
   margin-top: 24px;
-  color: #666;
+  color: var(--grey0);
   font-size: 13px;
 }
 </style>

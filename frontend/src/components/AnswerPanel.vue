@@ -91,14 +91,14 @@ defineExpose({
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #252526;
+  background: var(--bg1);
   border-radius: 12px;
   overflow: hidden;
 }
 
 .answer-header {
   padding: 12px 16px;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--bg3);
 }
 
 .badge {
@@ -109,13 +109,13 @@ defineExpose({
 }
 
 .badge.detailed {
-  background: #1e3a5f;
-  color: #64b5f6;
+  background: var(--bg-blue);
+  color: var(--blue);
 }
 
 .badge.concise {
-  background: #1e3a1e;
-  color: #81c784;
+  background: var(--bg-green);
+  color: var(--green);
 }
 
 .answer-content {
@@ -127,10 +127,11 @@ defineExpose({
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+  color: var(--fg);
 }
 
 .answer-content.selected {
-  border: 2px solid #4fc3f7;
+  border: 2px solid var(--aqua);
 }
 
 .answer-content pre {
@@ -141,14 +142,14 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #888;
+  color: var(--grey1);
 }
 
 .spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid #333;
-  border-top-color: #4fc3f7;
+  border: 2px solid var(--bg3);
+  border-top-color: var(--blue);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -159,14 +160,14 @@ defineExpose({
 
 .divider {
   width: 2px;
-  background: #333;
+  background: var(--bg3);
 }
 
 .choose-btn {
   margin: 12px 16px;
   padding: 10px 16px;
-  background: #4fc3f7;
-  color: #000;
+  background: var(--blue);
+  color: var(--bg0);
   border: none;
   border-radius: 6px;
   font-weight: 500;
@@ -175,13 +176,13 @@ defineExpose({
 }
 
 .choose-btn:hover:not(:disabled) {
-  background: #81d4fa;
+  background: var(--aqua);
   transform: translateY(-1px);
 }
 
 .choose-btn:disabled {
-  background: #444;
-  color: #888;
+  background: var(--bg3);
+  color: var(--grey1);
   cursor: not-allowed;
 }
 </style>

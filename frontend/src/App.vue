@@ -167,21 +167,23 @@ function handleRegionSwitch({ from, to }) {
   display: flex;
   flex-direction: column;
   padding: 20px;
+  background: var(--bg0);
+  color: var(--fg);
 }
 
 .header {
   text-align: center;
   padding: 20px 0;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--bg3);
 }
 
 .header h1 {
   font-size: 28px;
-  color: #4fc3f7;
+  color: var(--blue);
 }
 
 .subtitle {
-  color: #888;
+  color: var(--grey1);
   margin-top: 8px;
 }
 
@@ -191,7 +193,7 @@ function handleRegionSwitch({ from, to }) {
   justify-content: center;
   gap: 6px;
   margin-top: 8px;
-  color: #4fc3f7;
+  color: var(--aqua);
   font-size: 14px;
 }
 
@@ -214,19 +216,20 @@ function handleRegionSwitch({ from, to }) {
 .welcome h2 {
   font-size: 24px;
   margin-bottom: 16px;
+  color: var(--fg);
 }
 
 .welcome p {
-  color: #aaa;
+  color: var(--grey1);
 }
 
 .welcome .hint {
   margin-top: 24px;
   padding: 12px 24px;
-  background: #2a2a2a;
+  background: var(--bg1);
   border-radius: 8px;
   font-size: 14px;
-  color: #4fc3f7;
+  color: var(--aqua);
 }
 
 .toast {
@@ -234,8 +237,8 @@ function handleRegionSwitch({ from, to }) {
   bottom: 80px;
   right: 20px;
   padding: 10px 20px;
-  background: #4fc3f7;
-  color: #000;
+  background: var(--green);
+  color: var(--bg0);
   border-radius: 6px;
   font-size: 14px;
   font-weight: 500;
