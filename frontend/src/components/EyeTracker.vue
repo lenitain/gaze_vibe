@@ -17,6 +17,10 @@ let lastSwitchTime = null
 let lastSwitchFrom = null
 const DEBOUNCE_THRESHOLD = 80
 
+let totalDurationA = 0
+let totalDurationB = 0
+let tau = ref(0)
+
 let isCalibrating = ref(false)
 let calibrationPoints = []
 let calibrationIndex = ref(0)
@@ -59,10 +63,33 @@ function flushRegion() {
   if (currentRegion.value && regionStartTime) {
     const duration = Date.now() - regionStartTime
     if (duration > 0) {
+      if (currentRegion.value === 'A') {
+        totalDurationA += duration
+      } else {
+        totalDurationB += duration
+      }
       emit('data', { region: currentRegion.value, duration })
+      calculateTau()
     }
   }
   regionStartTime = null
+}
+
+function calculateTau() {
+  const total = totalDurationA + totalDurationB
+  if (total === 0) {
+    tau.value = 0
+    return
+  }
+  
+  const pA = totalDurationA / total
+  const pB = totalDurationB / total
+  
+  // 避免 log(0) 的情况
+  const entropyA = pA > 0 ? pA * Math.log(pA) : 0
+  const entropyB = pB > 0 ? pB * Math.log(pB) : 0
+  
+  tau.value = -(entropyA + entropyB)
 }
 
 async function startTracking() {
@@ -138,6 +165,9 @@ async function startTracking() {
     regionStartTime = null
     lastSwitchTime = null
     lastSwitchFrom = null
+    totalDurationA = 0
+    totalDurationB = 0
+    tau.value = 0
 
     const videoEl = document.getElementById('webgazerVideoFeed')
     if (videoEl) videoEl.style.display = 'block'
@@ -227,7 +257,8 @@ defineExpose({
   startTracking,
   stopTracking,
   startCalibration,
-  isTracking
+  isTracking,
+  tau
 })
 </script>
 
