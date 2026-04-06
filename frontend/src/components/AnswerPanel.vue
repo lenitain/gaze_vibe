@@ -16,7 +16,6 @@ const selectedSide = ref(null)
 const diffState = ref(null)
 const fileChanges = ref(new Map())
 const expandedBlocks = ref(new Set())
-const manualFilePicks = ref(new Map())
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -59,12 +58,11 @@ const allResolvedBlocks = computed(() => {
         }
       }
 
-      const manualPick = manualFilePicks.value.get(blockId)
-      const filePath = autoPath || manualPick || null
+      const filePath = autoPath
 
-      if (!filePath && (isTerminal || !isFileApplicable(block))) continue
-      if (filePath && !isFileApplicable(block)) continue
-      if (filePath && usedPaths.has(filePath)) continue
+      if (!filePath) continue
+      if (!isFileApplicable(block)) continue
+      if (usedPaths.has(filePath)) continue
 
       if (filePath) usedPaths.add(filePath)
 
@@ -111,15 +109,6 @@ function toggleBlock(blockId) {
 
 function isBlockExpanded(blockId) {
   return expandedBlocks.value.has(blockId)
-}
-
-function handleManualPick(blockId, event) {
-  const filePath = event.target.value
-  if (filePath) {
-    manualFilePicks.value.set(blockId, filePath)
-  } else {
-    manualFilePicks.value.delete(blockId)
-  }
 }
 
 function handleApplyClick(block) {
@@ -177,7 +166,6 @@ defineExpose({
   regionBId,
   commitAll: () => {
     fileChanges.value.clear()
-    manualFilePicks.value.clear()
   }
 })
 </script>
@@ -207,28 +195,15 @@ defineExpose({
               <div class="block-header" @click="toggleBlock(block.blockId)">
                 <span class="toggle-icon">{{ isBlockExpanded(block.blockId) ? '▼' : '▶' }}</span>
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
-                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
-                <select
-                  v-else
-                  class="file-pick-select"
-                  @click.stop
-                  @change="handleManualPick(block.blockId, $event)"
-                >
-                  <option value="">选择目标文件...</option>
-                  <option v-for="f in files" :key="f.path" :value="f.path">{{ f.path }}</option>
-                </select>
-                <span v-if="block.filePath && fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
+                <span class="block-file">{{ block.filePath }}</span>
+                <span v-if="fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
                 <button
-                  v-if="block.filePath"
                   class="apply-btn"
                   :class="getBtnClass(block.filePath)"
                   @click.stop="handleApplyClick(block)"
                 >
                   {{ getBtnText(block.filePath) }}
                 </button>
-              </div>
-              <div v-if="isBlockExpanded(block.blockId)" class="block-code">
-                <pre>{{ block.code }}</pre>
               </div>
             </div>
           </div>
@@ -269,19 +244,9 @@ defineExpose({
               <div class="block-header" @click="toggleBlock(block.blockId)">
                 <span class="toggle-icon">{{ isBlockExpanded(block.blockId) ? '▼' : '▶' }}</span>
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
-                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
-                <select
-                  v-else
-                  class="file-pick-select"
-                  @click.stop
-                  @change="handleManualPick(block.blockId, $event)"
-                >
-                  <option value="">选择目标文件...</option>
-                  <option v-for="f in files" :key="f.path" :value="f.path">{{ f.path }}</option>
-                </select>
-                <span v-if="block.filePath && fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
+                <span class="block-file">{{ block.filePath }}</span>
+                <span v-if="fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
                 <button
-                  v-if="block.filePath"
                   class="apply-btn"
                   :class="getBtnClass(block.filePath)"
                   @click.stop="handleApplyClick(block)"
@@ -469,22 +434,6 @@ defineExpose({
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.file-pick-select {
-  flex: 1;
-  font-size: var(--font-xs);
-  padding: 3px 6px;
-  background: var(--bg0);
-  color: var(--yellow);
-  border: 1px solid var(--yellow);
-  border-radius: 4px;
-  cursor: pointer;
-  outline: none;
-}
-
-.file-pick-select:focus {
-  border-color: var(--aqua);
 }
 
 .staged-badge {
