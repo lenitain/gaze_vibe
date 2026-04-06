@@ -36,8 +36,8 @@ bash run.sh          # Creates venv, installs deps, runs app
 ### Environment Variables
 
 ```bash
-export DEEPSEEK_API_KEY="your-api-key"   # Required for LLM features
-# Backend falls back to "your-api-key-here" if unset
+# API key is stored in backend/.env (not in git)
+DEEPSEEK_API_KEY=sk-xxxx
 ```
 
 ### Health Check
@@ -98,18 +98,21 @@ gaze-vibe/
 │       ├── styles/
 │       │   └── everforest.css    # Theme CSS variables
 │       ├── components/
-│       │   ├── AnswerPanel.vue   # Dual-answer display
+│       │   ├── AnswerPanel.vue   # Dual-answer display with code apply
 │       │   ├── ChatInput.vue     # Question input
+│       │   ├── DiffPreview.vue   # Diff preview for file changes
 │       │   ├── EyeTracker.vue    # WebGazer eye tracking
 │       │   ├── FolderSelector.vue # Local folder picker (File System Access API)
 │       │   ├── FileTree.vue      # File tree sidebar
 │       │   ├── FileTreeNode.vue  # Recursive tree node
 │       │   └── FileViewer.vue    # File content preview
 │       └── utils/
+│           ├── codeParser.js     # Parse code blocks and generate diffs
 │           ├── fileIndexer.js    # Index local project files
 │           └── fileSelector.js   # Smart file selection for AI context
 ├── backend/
 │   ├── app.py                   # Flask API server
+│   ├── .env                     # API key (not in git)
 │   ├── requirements.txt
 │   └── run.sh                   # uv-based launcher
 └── README.md
@@ -125,11 +128,22 @@ gaze-vibe/
 
 ## Key Architecture Notes
 
-**File System Access**: Uses browser's File System Access API (`window.showDirectoryPicker`) to read local project files. Requires Chrome 86+. Users select a folder on startup; files are indexed in memory.
+**File System Access**: Uses browser's File System Access API (`window.showDirectoryPicker`) with `readwrite` mode. Requires Chrome 86+. Users select a folder on startup; files are indexed in memory.
 
-**Eye Tracking Lifecycle**: WebGazer is initialized once, then uses `resume()`/`pause()` for subsequent tracking sessions. Camera preview is hidden via DOM manipulation when tracking stops.
+**Eye Tracking Lifecycle**: WebGazer is initialized once, then uses `resume()`/`pause()` for subsequent tracking sessions. Camera preview is hidden via DOM manipulation when tracking stops. Tracking pauses when diff preview is open.
 
 **Smart File Selection**: When user asks a question, `fileSelector.js` scores files by keyword relevance and sends top matches to the backend as `contextFiles`.
+
+**Code Apply Workflow**:
+1. AI answers are parsed for code blocks (`codeParser.js`)
+2. Each file can have at most one pending change
+3. Click "应用到文件" to stage (yellow button), click again to unstage
+4. Clicking "选择此答案" commits all staged changes to disk
+
+**State Management**:
+- `fileChanges` Map tracks pending changes (key: filePath, value: {content})
+- A and B panels share the same change state per file
+- Eye tracking data is not recorded when diff preview is open
 
 ## Theme
 
@@ -138,7 +152,7 @@ Uses Everforest Dark Medium palette. All colors are CSS variables defined in `sr
 - Foreground: `--fg`
 - Accents: `--blue`, `--green`, `--aqua`, `--red`, `--yellow`, `--purple`
 - Greys: `--grey0`, `--grey1`, `--grey2`
-- Font sizes: `--font-xs` (12px) to `--font-4xl` (28px)
+- Font sizes: `--font-xs` (18px) to `--font-4xl` (42px)
 
 ## Skills
 
