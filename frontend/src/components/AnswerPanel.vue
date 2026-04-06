@@ -13,35 +13,62 @@ const props = defineProps({
 const emit = defineEmits(['choice', 'apply-change', 'unapply-change', 'diff-toggle'])
 
 const selectedSide = ref(null)
-const codeBlocksA = ref([])
-const codeBlocksB = ref([])
 const diffState = ref(null)
-const pendingChanges = ref(new Map())
+const fileChanges = ref(new Map())
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
 
-watch(() => props.answerA, (text) => {
-  if (text) {
-    codeBlocksA.value = parseCodeBlocks(text).map(block => ({
-      ...block,
-      filePath: extractFilePath(block, text, props.files || [])
-    }))
-  } else {
-    codeBlocksA.value = []
-  }
-}, { immediate: true })
+const allCodeBlocks = computed(() => {
+  const blocksA = props.answerA ? parseCodeBlocks(props.answerA) : []
+  const blocksB = props.answerB ? parseCodeBlocks(props.answerB) : []
 
-watch(() => props.answerB, (text) => {
-  if (text) {
-    codeBlocksB.value = parseCodeBlocks(text).map(block => ({
-      ...block,
-      filePath: extractFilePath(block, text, props.files || [])
-    }))
-  } else {
-    codeBlocksB.value = []
+  const fileBlocks = new Map()
+
+  for (const block of blocksA) {
+    const filePath = extractFilePath(block, props.answerA, props.files || [])
+    if (filePath && !fileBlocks.has(filePath)) {
+      fileBlocks.set(filePath, {
+        ...block,
+        filePath,
+        source: 'A'
+      })
+    }
   }
-}, { immediate: true })
+
+  for (const block of blocksB) {
+    const filePath = extractFilePath(block, props.answerB, props.files || [])
+    if (filePath && !fileBlocks.has(filePath)) {
+      fileBlocks.set(filePath, {
+        ...block,
+        filePath,
+        source: 'B'
+      })
+    }
+  }
+
+  return fileBlocks
+})
+
+const codeBlocksA = computed(() => {
+  const blocks = []
+  allCodeBlocks.value.forEach((block, filePath) => {
+    if (block.source === 'A') {
+      blocks.push(block)
+    }
+  })
+  return blocks
+})
+
+const codeBlocksB = computed(() => {
+  const blocks = []
+  allCodeBlocks.value.forEach((block, filePath) => {
+    if (block.source === 'B') {
+      blocks.push(block)
+    }
+  })
+  return blocks
+})
 
 function selectA() {
   selectedSide.value = 'A'
@@ -53,13 +80,13 @@ function selectB() {
   emit('choice', 'B')
 }
 
-function handleBlockClick(block, source) {
+function handleBlockClick(block) {
   if (!block.filePath) return
 
-  const existing = pendingChanges.value.get(block.filePath)
+  const existing = fileChanges.value.get(block.filePath)
 
-  if (existing && existing.source === source) {
-    pendingChanges.value.delete(block.filePath)
+  if (existing) {
+    fileChanges.value.delete(block.filePath)
     emit('unapply-change', { filePath: block.filePath })
     return
   }
@@ -70,8 +97,7 @@ function handleBlockClick(block, source) {
   diffState.value = {
     filePath: block.filePath,
     originalContent: file.content,
-    newContent: block.code,
-    source
+    newContent: block.code
   }
   emit('diff-toggle', true)
 }
@@ -84,8 +110,8 @@ function hideDiff() {
 function applyChange() {
   if (!diffState.value) return
 
-  const { filePath, newContent, source } = diffState.value
-  pendingChanges.value.set(filePath, { content: newContent, source })
+  const { filePath, newContent } = diffState.value
+  fileChanges.value.set(filePath, { content: newContent })
 
   emit('apply-change', {
     filePath,
@@ -96,21 +122,15 @@ function applyChange() {
 }
 
 function getBlockStatus(filePath) {
-  return pendingChanges.value.get(filePath) || null
+  return fileChanges.value.get(filePath) || null
 }
 
-function getBlockBtnClass(filePath, source) {
-  const status = pendingChanges.value.get(filePath)
-  if (!status) return ''
-  if (status.source === source) return 'pending'
-  return 'other-side'
+function getBtnClass(filePath) {
+  return fileChanges.value.has(filePath) ? 'pending' : ''
 }
 
-function getBlockBtnText(filePath, source) {
-  const status = pendingChanges.value.get(filePath)
-  if (!status) return '应用到文件'
-  if (status.source === source) return '已暂存 (点击取消)'
-  return '另一版本已暂存'
+function getBtnText(filePath) {
+  return fileChanges.value.has(filePath) ? '已暂存 (点击取消)' : '应用到文件'
 }
 
 defineExpose({
@@ -118,7 +138,7 @@ defineExpose({
   regionBId,
   getBlockStatus,
   commitAll: () => {
-    pendingChanges.value.clear()
+    fileChanges.value.clear()
   }
 })
 </script>
@@ -144,15 +164,13 @@ defineExpose({
             >
               <div class="block-header">
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
-                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
+                <span class="block-file">{{ block.filePath }}</span>
                 <button
-                  v-if="block.filePath"
                   class="apply-btn"
-                  :class="getBlockBtnClass(block.filePath, 'A')"
-                  :disabled="getBlockStatus(block.filePath)?.source === 'B'"
-                  @click="handleBlockClick(block, 'A')"
+                  :class="getBtnClass(block.filePath)"
+                  @click="handleBlockClick(block)"
                 >
-                  {{ getBlockBtnText(block.filePath, 'A') }}
+                  {{ getBtnText(block.filePath) }}
                 </button>
               </div>
             </div>
@@ -189,15 +207,13 @@ defineExpose({
             >
               <div class="block-header">
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
-                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
+                <span class="block-file">{{ block.filePath }}</span>
                 <button
-                  v-if="block.filePath"
                   class="apply-btn"
-                  :class="getBlockBtnClass(block.filePath, 'B')"
-                  :disabled="getBlockStatus(block.filePath)?.source === 'A'"
-                  @click="handleBlockClick(block, 'B')"
+                  :class="getBtnClass(block.filePath)"
+                  @click="handleBlockClick(block)"
                 >
-                  {{ getBlockBtnText(block.filePath, 'B') }}
+                  {{ getBtnText(block.filePath) }}
                 </button>
               </div>
             </div>
@@ -358,7 +374,7 @@ defineExpose({
   transition: all 0.2s;
 }
 
-.apply-btn:hover:not(:disabled) {
+.apply-btn:hover {
   background: var(--aqua);
 }
 
@@ -369,12 +385,6 @@ defineExpose({
 
 .apply-btn.pending:hover {
   background: var(--red);
-}
-
-.apply-btn.other-side {
-  background: var(--bg3);
-  color: var(--grey1);
-  cursor: not-allowed;
 }
 
 .choose-btn {
