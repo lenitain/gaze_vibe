@@ -16,36 +16,13 @@ const answerPanelRef = ref(null)
 // A/B测试模式：treatment=启用眼动追踪，control=禁用眼动追踪
 const experimentMode = ref('treatment')
 
-const showFolderSelector = ref(true)
-const projectFolder = ref(null)
-const fileIndexer = new FileIndexer()
-const indexedFiles = ref([])
-
-const selectedFile = ref(null)
-const showFileExplorer = ref(true)
-
-const answerA = ref('')
-const answerB = ref('')
-const isLoading = ref(false)
-
-const diffOpen = ref(false)
-const diffOpenSide = ref(null)
-
-const userPreference = ref({
-  timeOnA: 0,
-  timeOnB: 0,
-  leftToRight: 0,
-  rightToLeft: 0,
-  finalChoice: null
-})
-
-const choiceSaved = ref(false)
-const savedToast = ref('')
-
 function toggleExperimentMode() {
-  const newMode = experimentMode.value === 'treatment' ? 'control' : 'treatment'
-  experimentMode.value = newMode
-  console.log('切换实验模式:', newMode)
+  if (experimentMode.value === 'treatment') {
+    experimentMode.value = 'control'
+  } else {
+    experimentMode.value = 'treatment'
+  }
+  console.log('切换实验模式:', experimentMode.value)
 }
 
 function handleFileSelect(file) {
@@ -233,7 +210,7 @@ function handleRegionSwitch({ from, to }) {
       <div class="experiment-toggle">
         <span class="toggle-label">实验模式:</span>
         <button 
-          @click="toggleExperimentMode" 
+          @click="experimentMode = experimentMode === 'treatment' ? 'control' : 'treatment'" 
           :class="['toggle-btn', experimentMode]"
         >
           {{ experimentMode === 'treatment' ? '眼动追踪' : '对照组' }}
