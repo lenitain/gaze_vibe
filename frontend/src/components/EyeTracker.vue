@@ -8,6 +8,7 @@ let isTracking = ref(false)
 let cameraReady = ref(false)
 let cameraError = ref('')
 let gazeCount = ref(0)
+let isInitialized = ref(false)
 
 let currentRegion = null
 let regionStartTime = null
@@ -81,27 +82,34 @@ async function startTracking() {
   }
 
   try {
-    await webgazer.begin()
-    webgazer.removeMouseEventListeners()
-    webgazer.showPredictionPoints(false)
+    if (!isInitialized.value) {
+      await webgazer.begin()
+      webgazer.removeMouseEventListeners()
+      webgazer.showPredictionPoints(false)
 
-    webgazer.setGazeListener((data) => {
-      if (!data) return
-      gazeCount.value++
+      webgazer.setGazeListener((data) => {
+        if (!data) return
+        gazeCount.value++
 
-      const region = getRegion(data.x)
+        const region = getRegion(data.x)
 
-      if (region !== currentRegion) {
-        flushRegion()
-        const from = currentRegion
-        currentRegion = region
-        regionStartTime = Date.now()
-        if (from) {
-          emit('region-switch', { from, to: region })
+        if (region !== currentRegion) {
+          flushRegion()
+          const from = currentRegion
+          currentRegion = region
+          regionStartTime = Date.now()
+          if (from) {
+            emit('region-switch', { from, to: region })
+          }
         }
-      }
-    })
+      })
 
+      isInitialized.value = true
+    } else {
+      await webgazer.resume()
+    }
+
+    webgazer.showVideoElement(true)
     webgazer.showPredictionPoints(true)
     isTracking.value = true
     cameraReady.value = true
@@ -109,7 +117,7 @@ async function startTracking() {
     currentRegion = null
     regionStartTime = null
 
-    console.log('追踪已启动，摄像头画面应已显示，请确认能看到你的脸')
+    console.log('追踪已启动')
   } catch (err) {
     cameraError.value = '启动失败: ' + (err.message || err)
   }
@@ -119,6 +127,8 @@ function stopTracking() {
   if (webgazer) {
     flushRegion()
     webgazer.pause()
+    webgazer.showVideoElement(false)
+    webgazer.showPredictionPoints(false)
     isTracking.value = false
     currentRegion = null
   }
