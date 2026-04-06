@@ -13,6 +13,14 @@ const isEyeTracking = ref(false)
 const eyeTrackerRef = ref(null)
 const answerPanelRef = ref(null)
 
+const showFolderSelector = ref(true)
+const projectFolder = ref(null)
+const fileIndexer = new FileIndexer()
+const indexedFiles = ref([])
+
+const selectedFile = ref(null)
+const showFileExplorer = ref(true)
+
 // A/B测试模式：treatment=启用眼动追踪，control=禁用眼动追踪
 const experimentMode = ref('treatment')
 
