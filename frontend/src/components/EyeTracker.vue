@@ -21,6 +21,33 @@ let totalDurationA = 0
 let totalDurationB = 0
 let tau = ref(0)
 
+// 时间序列类指标
+let firstFixationRegion = ref(null)
+let firstFixationDuration = ref(0)
+let lastFixationRegion = ref(null)
+let trackingStartTime = null
+
+// 扫视模式类指标
+let saccadeCount = ref(0)
+let abSwitchCount = 0
+let baSwitchCount = 0
+let regressionCount = 0
+let switchHistory = []
+
+// 认知负荷类指标
+let fixationDurations = []
+let switchIntervals = []
+let previousSwitchTime = null
+
+// 决策预测类指标
+let gazeBias = ref(0)
+let decisionLatency = ref(0)
+
+// 注意力动力学指标
+let explorationRatio = ref(0)
+let finalAttentionFocus = ref({ A: 0, B: 0 })
+let tauHistory = []
+
 let isCalibrating = ref(false)
 let calibrationPoints = []
 let calibrationIndex = ref(0)
@@ -68,11 +95,27 @@ function flushRegion() {
       } else {
         totalDurationB += duration
       }
+      
+      fixationDurations.push(duration)
+      
+      // 记录首看区域和首注视时长
+      if (!firstFixationRegion.value) {
+        firstFixationRegion.value = currentRegion.value
+        firstFixationDuration.value = duration
+      }
+      
       emit('data', { region: currentRegion.value, duration })
-      calculateTau()
+      calculateAllMetrics()
     }
   }
   regionStartTime = null
+}
+
+function calculateAllMetrics() {
+  calculateTau()
+  calculateGazeBias()
+  calculateExplorationRatio()
+  calculateFinalAttention()
 }
 
 function calculateTau() {
@@ -85,11 +128,95 @@ function calculateTau() {
   const pA = totalDurationA / total
   const pB = totalDurationB / total
   
-  // 避免 log(0) 的情况
   const entropyA = pA > 0 ? pA * Math.log(pA) : 0
   const entropyB = pB > 0 ? pB * Math.log(pB) : 0
   
   tau.value = -(entropyA + entropyB)
+  tauHistory.push(tau.value)
+}
+
+function calculateGazeBias() {
+  const total = totalDurationA + totalDurationB
+  if (total === 0) {
+    gazeBias.value = 0.5
+    return
+  }
+  gazeBias.value = totalDurationA / total
+}
+
+function calculateExplorationRatio() {
+  const total = saccadeCount.value
+  if (total === 0) {
+    explorationRatio.value = 0
+    return
+  }
+  
+  // 前1/3时间的扫视次数 vs 后2/3时间
+  const now = Date.now()
+  const elapsed = now - trackingStartTime
+  const oneThirdTime = elapsed / 3
+  
+  const earlySwitches = switchHistory.filter(t => t - trackingStartTime < oneThirdTime).length
+  explorationRatio.value = earlySwitches / total
+}
+
+function calculateFinalAttention() {
+  const now = Date.now()
+  const elapsed = now - regionStartTime
+  const totalSession = now - trackingStartTime
+  
+  // 计算最后30%时间的注视分布
+  if (totalSession > 0 && currentRegion.value) {
+    const finalDuration = elapsed
+    if (currentRegion.value === 'A') {
+      finalAttentionFocus.value.A += finalDuration
+    } else {
+      finalAttentionFocus.value.B += finalDuration
+    }
+  }
+}
+
+function getFixationDurationVariance() {
+  if (fixationDurations.length === 0) return 0
+  const mean = fixationDurations.reduce((a, b) => a + b, 0) / fixationDurations.length
+  const variance = fixationDurations.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / fixationDurations.length
+  return variance
+}
+
+function getMeanSwitchInterval() {
+  if (switchIntervals.length === 0) return 0
+  return switchIntervals.reduce((a, b) => a + b, 0) / switchIntervals.length
+}
+
+function getSwitchIntervalDecay() {
+  if (switchIntervals.length < 4) return 0
+  
+  const half = Math.floor(switchIntervals.length / 2)
+  const firstHalf = switchIntervals.slice(0, half)
+  const secondHalf = switchIntervals.slice(half)
+  
+  const meanFirst = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length
+  const meanSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length
+  
+  // 返回衰减比：正数表示变慢，负数表示变快
+  return (meanSecond - meanFirst) / meanFirst
+}
+
+function getRegressionRate() {
+  if (saccadeCount.value === 0) return 0
+  return regressionCount / saccadeCount.value
+}
+
+function getDirectionRatio() {
+  if (abSwitchCount + baSwitchCount === 0) return 0.5
+  return abSwitchCount / (abSwitchCount + baSwitchCount)
+}
+
+function getEntropyChangeRate() {
+  if (tauHistory.length < 2) return 0
+  const first = tauHistory[0]
+  const last = tauHistory[tauHistory.length - 1]
+  return last - first
 }
 
 async function startTracking() {
@@ -146,6 +273,25 @@ async function startTracking() {
           lastSwitchTime = now
           lastSwitchFrom = from
           
+          // 记录扫视数据
+          saccadeCount.value++
+          switchHistory.push(now)
+          
+          // 统计扫视方向
+          if (from === 'A' && region === 'B') {
+            abSwitchCount++
+          } else if (from === 'B' && region === 'A') {
+            baSwitchCount++
+            regressionCount++ // B→A视为回视
+          }
+          
+          // 记录转换间隔
+          if (previousSwitchTime) {
+            const interval = now - previousSwitchTime
+            switchIntervals.push(interval)
+          }
+          previousSwitchTime = now
+          
           if (from) {
             emit('region-switch', { from, to: region })
           }
@@ -168,6 +314,33 @@ async function startTracking() {
     totalDurationA = 0
     totalDurationB = 0
     tau.value = 0
+    
+    // 重置时间序列指标
+    firstFixationRegion.value = null
+    firstFixationDuration.value = 0
+    lastFixationRegion.value = null
+    trackingStartTime = Date.now()
+    
+    // 重置扫视模式指标
+    saccadeCount.value = 0
+    abSwitchCount = 0
+    baSwitchCount = 0
+    regressionCount = 0
+    switchHistory = []
+    
+    // 重置认知负荷指标
+    fixationDurations = []
+    switchIntervals = []
+    previousSwitchTime = null
+    
+    // 重置决策预测指标
+    gazeBias.value = 0
+    decisionLatency.value = 0
+    
+    // 重置注意力动力学指标
+    explorationRatio.value = 0
+    finalAttentionFocus.value = { A: 0, B: 0 }
+    tauHistory = []
 
     const videoEl = document.getElementById('webgazerVideoFeed')
     if (videoEl) videoEl.style.display = 'block'
@@ -184,6 +357,8 @@ async function startTracking() {
 function stopTracking() {
   if (webgazer) {
     flushRegion()
+    lastFixationRegion.value = currentRegion.value
+    decisionLatency.value = Date.now() - trackingStartTime
     webgazer.pause()
     webgazer.showPredictionPoints(false)
     isTracking.value = false
@@ -194,6 +369,42 @@ function stopTracking() {
 
     const videoContainer = document.getElementById('webgazerVideoContainer')
     if (videoContainer) videoContainer.style.display = 'none'
+  }
+}
+
+function getAllMetrics() {
+  return {
+    // 信息熵
+    tau: tau.value,
+    
+    // 时间序列类
+    firstFixationRegion: firstFixationRegion.value,
+    firstFixationDuration: firstFixationDuration.value,
+    lastFixationRegion: lastFixationRegion.value,
+    
+    // 扫视模式类
+    saccadeCount: saccadeCount.value,
+    directionRatio: getDirectionRatio(),
+    regressionRate: getRegressionRate(),
+    
+    // 认知负荷类
+    fixationDurationVariance: getFixationDurationVariance(),
+    meanSwitchInterval: getMeanSwitchInterval(),
+    switchIntervalDecay: getSwitchIntervalDecay(),
+    
+    // 决策预测类
+    gazeBias: gazeBias.value,
+    decisionLatency: decisionLatency.value,
+    
+    // 注意力动力学
+    explorationRatio: explorationRatio.value,
+    finalAttentionFocus: finalAttentionFocus.value,
+    entropyChangeRate: getEntropyChangeRate(),
+    
+    // 原始数据
+    totalDurationA,
+    totalDurationB,
+    tauHistory: tauHistory.slice()
   }
 }
 
@@ -258,7 +469,8 @@ defineExpose({
   stopTracking,
   startCalibration,
   isTracking,
-  tau
+  tau,
+  getAllMetrics
 })
 </script>
 
