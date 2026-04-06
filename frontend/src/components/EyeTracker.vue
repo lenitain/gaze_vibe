@@ -13,6 +13,10 @@ let isInitialized = ref(false)
 let currentRegion = ref(null)
 let regionStartTime = null
 
+let lastSwitchTime = null
+let lastSwitchFrom = null
+const DEBOUNCE_THRESHOLD = 80
+
 let isCalibrating = ref(false)
 let calibrationPoints = []
 let calibrationIndex = ref(0)
@@ -94,10 +98,27 @@ async function startTracking() {
         const region = getRegion(data.x)
 
         if (region !== currentRegion.value) {
+          const now = Date.now()
+          
+          // 检测抖动：如果刚从A切换到B，又马上切回A（或反过来），且总时长<80ms
+          if (lastSwitchFrom === region && lastSwitchTime) {
+            const switchDuration = now - lastSwitchTime
+            if (switchDuration < DEBOUNCE_THRESHOLD) {
+              // 这是抖动，不切换，时长计入当前区域
+              lastSwitchTime = null
+              lastSwitchFrom = null
+              return
+            }
+          }
+          
+          // 正常切换
           flushRegion()
           const from = currentRegion.value
           currentRegion.value = region
-          regionStartTime = Date.now()
+          regionStartTime = now
+          lastSwitchTime = now
+          lastSwitchFrom = from
+          
           if (from) {
             emit('region-switch', { from, to: region })
           }
@@ -115,6 +136,8 @@ async function startTracking() {
     gazeCount.value = 0
     currentRegion.value = null
     regionStartTime = null
+    lastSwitchTime = null
+    lastSwitchFrom = null
 
     const videoEl = document.getElementById('webgazerVideoFeed')
     if (videoEl) videoEl.style.display = 'block'
