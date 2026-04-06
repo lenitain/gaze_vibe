@@ -35,13 +35,17 @@ curl http://localhost:8000/api/health
 1. `codeParser.js` parses code blocks from AI answers, `extractFilePath` matches them to project files
 2. Only blocks with a matched file path get a "暂存修改" button; blocks without a path show code preview only
 3. Click "暂存修改" → DiffPreview modal → "应用修改" to stage → button becomes red "已暂存 (取消)"
-4. Click "选择此答案" → writes all staged files to disk via `fileIndexer.writeFile()`
+4. Click "选择此答案" → writes staged files **from that panel only** to disk via `fileIndexer.writeFile()`
 
-**Deduplication**: `allResolvedBlocks` in `AnswerPanel.vue` deduplicates across both panels by file path. If both answers target the same file, only the first panel's block is kept.
+**Per-panel commits**: Left button commits `fileChangesA`, right button commits `fileChangesB`. Each file stores `_stagedBy` ('A' or 'B') to track which panel staged it. `handleChoice(side)` only writes files where `file._stagedBy === side`.
 
-**Content filtering**: `isFileApplicable()` rejects bash/shell commands, compiler output (`Compiling`, `Finished`, `Running`), error traces, and blocks under 3 lines.
+**Right panel shows all blocks**: `codeBlocksB` displays `allResolvedBlocks` (from both A and B). Each block is tagged with `_panel: 'B'` so clicking them always stages to `fileChangesB`, regardless of `block.source`.
 
-**File path extraction priority** (`extractFilePath` in `codeParser.js`):
+**Deduplication**: `allResolvedBlocks` deduplicates by file path within each panel's resolution. Auto-assign post-processing gives unmatched blocks a project file by language, without dedup restriction.
+
+**Content filtering**: `isFileApplicable()` rejects bash/shell commands, compiler output, error traces, and blocks under 2 lines.
+
+**File path extraction** (`extractFilePath` in `codeParser.js`):
 1. Explicit labels in text before code block (e.g., "file: src/main.rs")
 2. Path-like patterns (e.g., `src/foo.js`)
 3. Fuzzy filename matching
@@ -50,13 +54,17 @@ curl http://localhost:8000/api/health
 
 ### Eye Tracking
 
-WebGazer initialized once, then `resume()`/`pause()` per session. Camera preview hidden via DOM manipulation. Tracking pauses when DiffPreview is open — eye data is silently discarded.
+WebGazer initialized once, then `resume()`/`pause()` per session. Camera preview hidden via DOM manipulation. Tracking indicator shows current region (详细解答/简洁解答) with side-specific color (blue/green).
+
+During DiffPreview: eye data is attributed to the side that opened the diff (`diffOpenSide`), not discarded.
 
 ### State
 
-- `fileChanges` Map (key: filePath, value: {content}) — shared between A and B panels in AnswerPanel
-- `file._originalContent` — set on stage, used for rollback on unstage, deleted after disk write
-- `commitAll()` only clears UI state; actual writes happen in `App.vue handleChoice()`
+- `fileChangesA` / `fileChangesB` — separate Maps per panel, key: filePath, value: {content}
+- `file._originalContent` — set on stage, used for rollback on unstage
+- `file._stagedBy` — 'A' or 'B', determines which panel's commit writes this file
+- `block._panel` — forces a block's actions to target a specific panel's state
+- `commitAll(side)` only clears UI state; actual writes happen in `App.vue handleChoice()`
 
 ## Code Style
 
