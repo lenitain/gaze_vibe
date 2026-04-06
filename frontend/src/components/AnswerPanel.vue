@@ -96,10 +96,6 @@ const allResolvedBlocks = computed(() => {
   resolveAnswer(props.answerA, 'A')
   resolveAnswer(props.answerB, 'B')
 
-  console.log('[DEBUG] allResolvedBlocks:', results.map(b => ({
-    source: b.source, lang: b.lang, filePath: b.filePath, codeLen: b.code?.length
-  })))
-
   if (fileIndex.length > 0) {
     const langExtMap = {
       javascript: ['js', 'mjs', 'cjs'], typescript: ['ts', 'mts', 'cts'],
@@ -129,15 +125,11 @@ const allResolvedBlocks = computed(() => {
     }
   }
 
-  console.log('[DEBUG] after auto-assign:', results.map(b => ({
-    source: b.source, lang: b.lang, filePath: b.filePath, codeLen: b.code?.length
-  })))
-
   return results
 })
 
 const codeBlocksA = computed(() => allResolvedBlocks.value.filter(b => b.source === 'A'))
-const codeBlocksB = computed(() => allResolvedBlocks.value.filter(b => b.source === 'B'))
+const codeBlocksB = computed(() => allResolvedBlocks.value)
 
 const answerTextA = computed(() => props.answerA ? stripCodeBlocks(props.answerA) : '')
 const answerTextB = computed(() => props.answerB ? stripCodeBlocks(props.answerB) : '')
