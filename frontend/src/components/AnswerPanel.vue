@@ -130,7 +130,7 @@ const allResolvedBlocks = computed(() => {
 })
 
 const codeBlocksA = computed(() => allResolvedBlocks.value.filter(b => b.source === 'A'))
-const codeBlocksB = computed(() => allResolvedBlocks.value)
+const codeBlocksB = computed(() => allResolvedBlocks.value.map(b => ({ ...b, _panel: 'B' })))
 
 const answerTextA = computed(() => props.answerA ? stripCodeBlocks(props.answerA) : '')
 const answerTextB = computed(() => props.answerB ? stripCodeBlocks(props.answerB) : '')
@@ -155,7 +155,8 @@ function selectB() {
 function handleApplyClick(block) {
   if (!block.filePath) return
 
-  const changes = getFileChanges(block.source)
+  const side = block._panel || block.source
+  const changes = getFileChanges(side)
   const existing = changes.get(block.filePath)
   if (existing) {
     changes.delete(block.filePath)
@@ -170,9 +171,9 @@ function handleApplyClick(block) {
     filePath: block.filePath,
     originalContent: file.content,
     newContent: block.code,
-    source: block.source
+    source: side
   }
-  emit('diff-toggle', true, block.source)
+  emit('diff-toggle', true, side)
 }
 
 function hideDiff() {
