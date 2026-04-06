@@ -116,11 +116,10 @@ const allResolvedBlocks = computed(() => {
       const noPathBlock = panelBlocks.find(b => !b.filePath && b.lang && langExtMap[b.lang.toLowerCase()])
       if (noPathBlock) {
         const exts = langExtMap[noPathBlock.lang.toLowerCase()]
-        const match = fileIndex.find(f => exts.includes(f.path.split('.').pop().toLowerCase()) && !usedPaths.has(f.path))
+        const match = fileIndex.find(f => exts.includes(f.path.split('.').pop().toLowerCase()))
         if (match) {
           noPathBlock.filePath = match.path
           noPathBlock.autoMatched = true
-          usedPaths.add(match.path)
         }
       }
     }
