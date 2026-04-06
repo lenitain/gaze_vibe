@@ -23,6 +23,11 @@ const showFileExplorer = ref(true)
 
 // A/B测试模式：treatment=启用眼动追踪，control=禁用眼动追踪
 const experimentMode = ref('treatment')
+const isTreatment = computed(() => experimentMode.value === 'treatment')
+
+function toggleMode() {
+  experimentMode.value = experimentMode.value === 'treatment' ? 'control' : 'treatment'
+}
 
 function toggleExperimentMode() {
   if (experimentMode.value === 'treatment') {
@@ -216,12 +221,12 @@ function handleRegionSwitch({ from, to }) {
         {{ projectFolder.name }}
       </p>
       <div class="experiment-toggle">
-        <span class="toggle-label">实验模式:</span>
+        <span class="toggle-label">实验模式: {{ experimentMode }}</span>
         <button 
-          @click="experimentMode = experimentMode === 'treatment' ? 'control' : 'treatment'" 
+          @click.stop="toggleMode" 
           :class="['toggle-btn', experimentMode]"
         >
-          {{ experimentMode === 'treatment' ? '眼动追踪' : '对照组' }}
+          {{ isTreatment ? '眼动追踪' : '对照组' }}
         </button>
       </div>
     </header>
