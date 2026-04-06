@@ -80,7 +80,7 @@ def generate_dual_answers(prompt, preference=None, context_files=None):
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=2000,
+            max_tokens=3000,
         )
         answer_a = response_a.choices[0].message.content
 
@@ -92,7 +92,7 @@ def generate_dual_answers(prompt, preference=None, context_files=None):
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=500,
+            max_tokens=3000,
         )
         answer_b = response_b.choices[0].message.content
 
