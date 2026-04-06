@@ -38,6 +38,25 @@ const allResolvedBlocks = computed(() => {
       let autoPath = null
       if (!isTerminal) {
         autoPath = extractFilePath(block, answer, fileIndex)
+
+        if (!autoPath && lang) {
+          const langExtMap = {
+            javascript: ['js', 'mjs', 'cjs'], typescript: ['ts', 'mts', 'cts'],
+            jsx: ['jsx'], tsx: ['tsx'], python: ['py'], rust: ['rs'],
+            go: ['go'], java: ['java'], kotlin: ['kt'], swift: ['swift'],
+            ruby: ['rb'], php: ['php'], html: ['html', 'htm'], css: ['css'],
+            scss: ['scss'], less: ['less'], json: ['json'], yaml: ['yaml', 'yml'],
+            toml: ['toml'], xml: ['xml'], sql: ['sql'], c: ['c'], cpp: ['cpp', 'cc', 'cxx'],
+            h: ['h'], hpp: ['hpp'], csharp: ['cs'], dart: ['dart'], lua: ['lua'],
+            r: ['r'], scala: ['scala'], vue: ['vue'], svelte: ['svelte'],
+          }
+          const exts = langExtMap[lang]
+          if (exts) {
+            const match = fileIndex.find(f => exts.includes(f.path.split('.').pop().toLowerCase()))
+            if (match) autoPath = match.path
+          }
+        }
+
         if (autoPath && lang) {
           const ext = autoPath.split('.').pop().toLowerCase()
           const langExtMap = {
@@ -59,9 +78,9 @@ const allResolvedBlocks = computed(() => {
 
       const filePath = autoPath
 
-      if (!filePath) continue
+      if (isTerminal) continue
       if (!isFileApplicable(block)) continue
-      if (usedPaths.has(filePath)) continue
+      if (filePath && usedPaths.has(filePath)) continue
 
       if (filePath) usedPaths.add(filePath)
 
@@ -181,15 +200,19 @@ defineExpose({
             >
               <div class="block-header">
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
-                <span class="block-file">{{ block.filePath }}</span>
-                <span v-if="fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
+                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
+                <span v-if="block.filePath && fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
                 <button
+                  v-if="block.filePath"
                   class="apply-btn"
                   :class="getBtnClass(block.filePath)"
                   @click.stop="handleApplyClick(block)"
                 >
                   {{ getBtnText(block.filePath) }}
                 </button>
+              </div>
+              <div v-if="!block.filePath" class="block-code">
+                <pre>{{ block.code }}</pre>
               </div>
             </div>
           </div>
@@ -229,9 +252,10 @@ defineExpose({
             >
               <div class="block-header">
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
-                <span class="block-file">{{ block.filePath }}</span>
-                <span v-if="fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
+                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
+                <span v-if="block.filePath && fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
                 <button
+                  v-if="block.filePath"
                   class="apply-btn"
                   :class="getBtnClass(block.filePath)"
                   @click.stop="handleApplyClick(block)"
@@ -239,7 +263,9 @@ defineExpose({
                   {{ getBtnText(block.filePath) }}
                 </button>
               </div>
-
+              <div v-if="!block.filePath" class="block-code">
+                <pre>{{ block.code }}</pre>
+              </div>
             </div>
           </div>
         </template>
@@ -445,6 +471,22 @@ defineExpose({
 
 .apply-btn.pending:hover {
   opacity: 0.85;
+}
+
+.block-code {
+  padding: 12px;
+  background: var(--bg0);
+  border-top: 1px solid var(--bg3);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.block-code pre {
+  margin: 0;
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--fg);
 }
 
 .choose-btn {
