@@ -43,8 +43,10 @@ const choiceSaved = ref(false)
 const savedToast = ref('')
 
 function toggleExperimentMode() {
-  experimentMode.value = experimentMode.value === 'treatment' ? 'control' : 'treatment'
-  localStorage.setItem('experimentMode', experimentMode.value)
+  const newMode = experimentMode.value === 'treatment' ? 'control' : 'treatment'
+  experimentMode.value = newMode
+  localStorage.setItem('experimentMode', newMode)
+  console.log('切换实验模式:', newMode)
 }
 
 function handleFileSelect(file) {
