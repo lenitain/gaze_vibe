@@ -15,7 +15,6 @@ const emit = defineEmits(['choice', 'apply-change', 'unapply-change', 'diff-togg
 const selectedSide = ref(null)
 const diffState = ref(null)
 const fileChanges = ref(new Map())
-const expandedBlocks = ref(new Set())
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -99,18 +98,6 @@ function selectB() {
   emit('choice', 'B')
 }
 
-function toggleBlock(blockId) {
-  if (expandedBlocks.value.has(blockId)) {
-    expandedBlocks.value.delete(blockId)
-  } else {
-    expandedBlocks.value.add(blockId)
-  }
-}
-
-function isBlockExpanded(blockId) {
-  return expandedBlocks.value.has(blockId)
-}
-
 function handleApplyClick(block) {
   if (!block.filePath) return
 
@@ -192,8 +179,7 @@ defineExpose({
               class="code-block"
               :class="{ staged: block.filePath && fileChanges.has(block.filePath) }"
             >
-              <div class="block-header" @click="toggleBlock(block.blockId)">
-                <span class="toggle-icon">{{ isBlockExpanded(block.blockId) ? '▼' : '▶' }}</span>
+              <div class="block-header">
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
                 <span class="block-file">{{ block.filePath }}</span>
                 <span v-if="fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
@@ -241,8 +227,7 @@ defineExpose({
               class="code-block"
               :class="{ staged: block.filePath && fileChanges.has(block.filePath) }"
             >
-              <div class="block-header" @click="toggleBlock(block.blockId)">
-                <span class="toggle-icon">{{ isBlockExpanded(block.blockId) ? '▼' : '▶' }}</span>
+              <div class="block-header">
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
                 <span class="block-file">{{ block.filePath }}</span>
                 <span v-if="fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
@@ -254,9 +239,7 @@ defineExpose({
                   {{ getBtnText(block.filePath) }}
                 </button>
               </div>
-              <div v-if="isBlockExpanded(block.blockId)" class="block-code">
-                <pre>{{ block.code }}</pre>
-              </div>
+
             </div>
           </div>
         </template>
@@ -410,14 +393,6 @@ defineExpose({
   background: var(--bg3);
 }
 
-.toggle-icon {
-  font-size: 10px;
-  color: var(--grey1);
-  width: 14px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
 .block-lang {
   font-size: var(--font-xs);
   color: var(--grey1);
@@ -470,22 +445,6 @@ defineExpose({
 
 .apply-btn.pending:hover {
   opacity: 0.85;
-}
-
-.block-code {
-  padding: 12px;
-  background: var(--bg0);
-  border-top: 1px solid var(--bg3);
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.block-code pre {
-  margin: 0;
-  font-size: var(--font-xs);
-  line-height: 1.5;
-  white-space: pre;
-  color: var(--fg);
 }
 
 .choose-btn {
