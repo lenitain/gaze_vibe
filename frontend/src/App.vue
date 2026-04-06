@@ -11,6 +11,7 @@ import { selectRelevantFiles, formatFilesForPrompt } from './utils/fileSelector.
 
 const isEyeTracking = ref(false)
 const eyeTrackerRef = ref(null)
+const answerPanelRef = ref(null)
 
 const showFolderSelector = ref(true)
 const projectFolder = ref(null)
@@ -23,6 +24,8 @@ const showFileExplorer = ref(true)
 const answerA = ref('')
 const answerB = ref('')
 const isLoading = ref(false)
+
+const diffOpen = ref(false)
 
 const userPreference = ref({
   timeOnA: 0,
@@ -89,6 +92,10 @@ async function handleChoice(side) {
     isEyeTracking.value = false
   }
 
+  if (answerPanelRef.value) {
+    answerPanelRef.value.commitAll()
+  }
+
   try {
     await fetch('/api/preference', {
       method: 'POST',
@@ -114,16 +121,19 @@ async function handleApplyChange({ filePath, content }) {
     if (selectedFile.value?.path === filePath) {
       selectedFile.value = { ...selectedFile.value, content }
     }
-
-    choiceSaved.value = true
-    setTimeout(() => { choiceSaved.value = false }, 2000)
   } catch (err) {
     console.error('Write file failed:', err)
     alert('写入文件失败: ' + err.message)
   }
 }
 
+function handleDiffToggle(isOpen) {
+  diffOpen.value = isOpen
+}
+
 function handleEyeData(data) {
+  if (diffOpen.value) return
+
   if (data.region === 'A') {
     userPreference.value.timeOnA += data.duration
   } else if (data.region === 'B') {
@@ -132,6 +142,8 @@ function handleEyeData(data) {
 }
 
 function handleRegionSwitch({ from, to }) {
+  if (diffOpen.value) return
+
   if (from === 'A' && to === 'B') {
     userPreference.value.leftToRight++
   } else if (from === 'B' && to === 'A') {
@@ -191,12 +203,14 @@ function handleRegionSwitch({ from, to }) {
 
           <AnswerPanel
             v-if="answerA || answerB"
+            ref="answerPanelRef"
             :answerA="answerA"
             :answerB="answerB"
             :is-loading="isLoading"
             :files="indexedFiles"
             @choice="handleChoice"
             @apply-change="handleApplyChange"
+            @diff-toggle="handleDiffToggle"
           />
         </div>
 

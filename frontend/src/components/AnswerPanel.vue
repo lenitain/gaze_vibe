@@ -10,12 +10,13 @@ const props = defineProps({
   files: Array
 })
 
-const emit = defineEmits(['choice', 'apply-change'])
+const emit = defineEmits(['choice', 'apply-change', 'diff-toggle'])
 
 const selectedSide = ref(null)
 const codeBlocksA = ref([])
 const codeBlocksB = ref([])
 const diffState = ref(null)
+const appliedBlocks = ref(new Map())
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -63,26 +64,43 @@ function showDiff(block) {
     originalContent: file.content,
     newContent: block.code
   }
+  emit('diff-toggle', true)
 }
 
 function hideDiff() {
   diffState.value = null
+  emit('diff-toggle', false)
 }
 
 async function applyChange() {
   if (!diffState.value) return
 
+  const filePath = diffState.value.filePath
+  appliedBlocks.value.set(filePath, 'pending')
+
   emit('apply-change', {
-    filePath: diffState.value.filePath,
+    filePath,
     content: diffState.value.newContent
   })
 
   hideDiff()
 }
 
+function getBlockStatus(filePath) {
+  return appliedBlocks.value.get(filePath) || null
+}
+
 defineExpose({
   regionAId,
-  regionBId
+  regionBId,
+  getBlockStatus,
+  commitAll: () => {
+    appliedBlocks.value.forEach((status, key) => {
+      if (status === 'pending') {
+        appliedBlocks.value.set(key, 'committed')
+      }
+    })
+  }
 })
 </script>
 
@@ -111,9 +129,10 @@ defineExpose({
                 <button
                   v-if="block.filePath"
                   class="apply-btn"
+                  :class="getBlockStatus(block.filePath)"
                   @click="showDiff(block)"
                 >
-                  应用到文件
+                  {{ getBlockStatus(block.filePath) === 'committed' ? '已提交' : getBlockStatus(block.filePath) === 'pending' ? '已暂存' : '应用到文件' }}
                 </button>
               </div>
             </div>
@@ -154,9 +173,10 @@ defineExpose({
                 <button
                   v-if="block.filePath"
                   class="apply-btn"
+                  :class="getBlockStatus(block.filePath)"
                   @click="showDiff(block)"
                 >
-                  应用到文件
+                  {{ getBlockStatus(block.filePath) === 'committed' ? '已提交' : getBlockStatus(block.filePath) === 'pending' ? '已暂存' : '应用到文件' }}
                 </button>
               </div>
             </div>
@@ -314,10 +334,21 @@ defineExpose({
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+  transition: all 0.2s;
 }
 
 .apply-btn:hover {
   background: var(--aqua);
+}
+
+.apply-btn.pending {
+  background: var(--yellow);
+  color: var(--bg0);
+}
+
+.apply-btn.committed {
+  background: var(--green);
+  cursor: default;
 }
 
 .choose-btn {
