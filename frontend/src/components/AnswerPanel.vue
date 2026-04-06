@@ -90,12 +90,42 @@ const allResolvedBlocks = computed(() => {
         filePath,
         autoMatched: !!autoPath,
         source
-      })
-    }
+      })    }
   }
 
   resolveAnswer(props.answerA, 'A')
   resolveAnswer(props.answerB, 'B')
+
+  if (fileIndex.length > 0) {
+    const langExtMap = {
+      javascript: ['js', 'mjs', 'cjs'], typescript: ['ts', 'mts', 'cts'],
+      jsx: ['jsx'], tsx: ['tsx'], python: ['py'], rust: ['rs'],
+      go: ['go'], java: ['java'], kotlin: ['kt'], swift: ['swift'],
+      ruby: ['rb'], php: ['php'], html: ['html', 'htm'], css: ['css'],
+      scss: ['scss'], less: ['less'], json: ['json'], yaml: ['yaml', 'yml'],
+      toml: ['toml'], xml: ['xml'], sql: ['sql'], c: ['c'], cpp: ['cpp', 'cc', 'cxx'],
+      h: ['h'], hpp: ['hpp'], csharp: ['cs'], dart: ['dart'], lua: ['lua'],
+      r: ['r'], scala: ['scala'], vue: ['vue'], svelte: ['svelte'],
+    }
+
+    for (const source of ['A', 'B']) {
+      const panelBlocks = results.filter(b => b.source === source)
+      const hasPath = panelBlocks.some(b => b.filePath)
+      if (hasPath) continue
+
+      const noPathBlock = panelBlocks.find(b => !b.filePath && b.lang && langExtMap[b.lang.toLowerCase()])
+      if (noPathBlock) {
+        const exts = langExtMap[noPathBlock.lang.toLowerCase()]
+        const match = fileIndex.find(f => exts.includes(f.path.split('.').pop().toLowerCase()) && !usedPaths.has(f.path))
+        if (match) {
+          noPathBlock.filePath = match.path
+          noPathBlock.autoMatched = true
+          usedPaths.add(match.path)
+        }
+      }
+    }
+  }
+
   return results
 })
 
