@@ -51,6 +51,10 @@ export function extractFilePath(block, text, nearbyFiles) {
   return null
 }
 
+export function stripCodeBlocks(text) {
+  return text.replace(/```(\w*)\s*\n[\s\S]*?```/g, '').replace(/\n{3,}/g, '\n\n').trim()
+}
+
 export function generateDiff(original, modified) {
   const origLines = original.split('\n')
   const modLines = modified.split('\n')

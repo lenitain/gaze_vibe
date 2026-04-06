@@ -36,6 +36,7 @@ const userPreference = ref({
 })
 
 const choiceSaved = ref(false)
+const savedToast = ref('')
 
 function handleFileSelect(file) {
   selectedFile.value = file
@@ -92,15 +93,22 @@ async function handleChoice(side) {
     isEyeTracking.value = false
   }
 
+  let savedCount = 0
   for (const file of indexedFiles.value) {
     if (file._originalContent) {
       try {
         await fileIndexer.writeFile(file.path, file.content)
         delete file._originalContent
+        savedCount++
       } catch (err) {
         console.error(`写入文件失败: ${file.path}`, err)
       }
     }
+  }
+
+  if (savedCount > 0) {
+    savedToast.value = `已保存 ${savedCount} 个文件的修改`
+    setTimeout(() => { savedToast.value = '' }, 3000)
   }
 
   if (answerPanelRef.value) {
@@ -249,7 +257,11 @@ function handleRegionSwitch({ from, to }) {
     />
 
     <transition name="fade">
-      <div v-if="choiceSaved" class="toast">偏好已保存</div>
+      <div v-if="savedToast" class="toast toast-success">{{ savedToast }}</div>
+    </transition>
+
+    <transition name="fade">
+      <div v-if="choiceSaved" class="toast toast-pref">偏好已保存</div>
     </transition>
   </div>
 </template>
@@ -386,7 +398,6 @@ function handleRegionSwitch({ from, to }) {
 
 .toast {
   position: fixed;
-  bottom: 80px;
   right: 20px;
   padding: 10px 20px;
   background: var(--green);
@@ -395,6 +406,14 @@ function handleRegionSwitch({ from, to }) {
   font-size: var(--font-sm);
   font-weight: 500;
   z-index: 200;
+}
+
+.toast-success {
+  bottom: 80px;
+}
+
+.toast-pref {
+  bottom: 130px;
 }
 
 .fade-enter-active,

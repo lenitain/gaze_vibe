@@ -1,6 +1,6 @@
 <script setup>
-import { ref, watch, computed } from 'vue'
-import { parseCodeBlocks, extractFilePath } from '../utils/codeParser.js'
+import { ref, computed } from 'vue'
+import { parseCodeBlocks, extractFilePath, stripCodeBlocks } from '../utils/codeParser.js'
 import DiffPreview from './DiffPreview.vue'
 
 const props = defineProps({
@@ -15,6 +15,7 @@ const emit = defineEmits(['choice', 'apply-change', 'unapply-change', 'diff-togg
 const selectedSide = ref(null)
 const diffState = ref(null)
 const fileChanges = ref(new Map())
+const expandedBlocks = ref(new Set())
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -53,9 +54,7 @@ const allCodeBlocks = computed(() => {
 const codeBlocksA = computed(() => {
   const blocks = []
   allCodeBlocks.value.forEach((block, filePath) => {
-    if (block.source === 'A') {
-      blocks.push(block)
-    }
+    if (block.source === 'A') blocks.push(block)
   })
   return blocks
 })
@@ -63,12 +62,20 @@ const codeBlocksA = computed(() => {
 const codeBlocksB = computed(() => {
   const blocks = []
   allCodeBlocks.value.forEach((block, filePath) => {
-    if (block.source === 'B') {
-      blocks.push(block)
-    }
+    if (block.source === 'B') blocks.push(block)
   })
   return blocks
 })
+
+const answerTextA = computed(() => {
+  return props.answerA ? stripCodeBlocks(props.answerA) : ''
+})
+
+const answerTextB = computed(() => {
+  return props.answerB ? stripCodeBlocks(props.answerB) : ''
+})
+
+const stagedCount = computed(() => fileChanges.value.size)
 
 function selectA() {
   selectedSide.value = 'A'
@@ -78,6 +85,18 @@ function selectA() {
 function selectB() {
   selectedSide.value = 'B'
   emit('choice', 'B')
+}
+
+function toggleBlock(blockId) {
+  if (expandedBlocks.value.has(blockId)) {
+    expandedBlocks.value.delete(blockId)
+  } else {
+    expandedBlocks.value.add(blockId)
+  }
+}
+
+function isBlockExpanded(blockId) {
+  return expandedBlocks.value.has(blockId)
 }
 
 function handleBlockClick(block) {
@@ -121,22 +140,24 @@ function applyChange() {
   hideDiff()
 }
 
-function getBlockStatus(filePath) {
-  return fileChanges.value.get(filePath) || null
-}
-
 function getBtnClass(filePath) {
   return fileChanges.value.has(filePath) ? 'pending' : ''
 }
 
 function getBtnText(filePath) {
-  return fileChanges.value.has(filePath) ? '已暂存 (点击取消)' : '应用到文件'
+  return fileChanges.value.has(filePath) ? '已暂存 (取消)' : '暂存修改'
+}
+
+function getChooseBtnText(side) {
+  if (stagedCount.value > 0) {
+    return `选择此答案 (${stagedCount.value} 个文件待提交)`
+  }
+  return '选择此答案'
 }
 
 defineExpose({
   regionAId,
   regionBId,
-  getBlockStatus,
   commitAll: () => {
     fileChanges.value.clear()
   }
@@ -148,6 +169,7 @@ defineExpose({
     <div class="answer-col" :id="regionAId">
       <div class="answer-header">
         <span class="badge detailed">详细解答</span>
+        <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个文件</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'A' }">
         <div v-if="isLoading" class="loading">
@@ -155,23 +177,30 @@ defineExpose({
           <span>生成中...</span>
         </div>
         <template v-else>
-          <pre>{{ answerA || '等待输入问题...' }}</pre>
+          <div v-if="answerTextA" class="answer-text">{{ answerTextA }}</div>
+          <div v-if="!answerA" class="placeholder">等待输入问题...</div>
           <div v-if="codeBlocksA.length > 0" class="code-blocks">
             <div
               v-for="(block, index) in codeBlocksA"
               :key="index"
               class="code-block"
+              :class="{ staged: fileChanges.has(block.filePath) }"
             >
-              <div class="block-header">
+              <div class="block-header" @click="toggleBlock('A-' + index)">
+                <span class="toggle-icon">{{ isBlockExpanded('A-' + index) ? '▼' : '▶' }}</span>
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
                 <span class="block-file">{{ block.filePath }}</span>
+                <span v-if="fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
                 <button
                   class="apply-btn"
                   :class="getBtnClass(block.filePath)"
-                  @click="handleBlockClick(block)"
+                  @click.stop="handleBlockClick(block)"
                 >
                   {{ getBtnText(block.filePath) }}
                 </button>
+              </div>
+              <div v-if="isBlockExpanded('A-' + index)" class="block-code">
+                <pre>{{ block.code }}</pre>
               </div>
             </div>
           </div>
@@ -179,10 +208,11 @@ defineExpose({
       </div>
       <button
         class="choose-btn"
+        :class="{ 'has-staged': stagedCount > 0 }"
         @click="selectA"
         :disabled="!answerA || isLoading"
       >
-        选择此答案
+        {{ getChooseBtnText('A') }}
       </button>
     </div>
 
@@ -191,6 +221,7 @@ defineExpose({
     <div class="answer-col" :id="regionBId">
       <div class="answer-header">
         <span class="badge concise">简洁解答</span>
+        <span v-if="codeBlocksB.length > 0" class="block-count">{{ codeBlocksB.length }} 个文件</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'B' }">
         <div v-if="isLoading" class="loading">
@@ -198,23 +229,30 @@ defineExpose({
           <span>生成中...</span>
         </div>
         <template v-else>
-          <pre>{{ answerB || '等待输入问题...' }}</pre>
+          <div v-if="answerTextB" class="answer-text">{{ answerTextB }}</div>
+          <div v-if="!answerB" class="placeholder">等待输入问题...</div>
           <div v-if="codeBlocksB.length > 0" class="code-blocks">
             <div
               v-for="(block, index) in codeBlocksB"
               :key="index"
               class="code-block"
+              :class="{ staged: fileChanges.has(block.filePath) }"
             >
-              <div class="block-header">
+              <div class="block-header" @click="toggleBlock('B-' + index)">
+                <span class="toggle-icon">{{ isBlockExpanded('B-' + index) ? '▼' : '▶' }}</span>
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
                 <span class="block-file">{{ block.filePath }}</span>
+                <span v-if="fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
                 <button
                   class="apply-btn"
                   :class="getBtnClass(block.filePath)"
-                  @click="handleBlockClick(block)"
+                  @click.stop="handleBlockClick(block)"
                 >
                   {{ getBtnText(block.filePath) }}
                 </button>
+              </div>
+              <div v-if="isBlockExpanded('B-' + index)" class="block-code">
+                <pre>{{ block.code }}</pre>
               </div>
             </div>
           </div>
@@ -222,10 +260,11 @@ defineExpose({
       </div>
       <button
         class="choose-btn"
+        :class="{ 'has-staged': stagedCount > 0 }"
         @click="selectB"
         :disabled="!answerB || isLoading"
       >
-        选择此答案
+        {{ getChooseBtnText('B') }}
       </button>
     </div>
 
@@ -261,6 +300,9 @@ defineExpose({
 .answer-header {
   padding: 12px 16px;
   border-bottom: 1px solid var(--bg3);
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .badge {
@@ -280,6 +322,11 @@ defineExpose({
   color: var(--green);
 }
 
+.block-count {
+  font-size: var(--font-xs);
+  color: var(--grey1);
+}
+
 .answer-content {
   flex: 1;
   padding: 16px;
@@ -296,8 +343,12 @@ defineExpose({
   border: 2px solid var(--aqua);
 }
 
-.answer-content pre {
-  margin: 0;
+.answer-text {
+  margin-bottom: 16px;
+}
+
+.placeholder {
+  color: var(--grey1);
 }
 
 .loading {
@@ -326,13 +377,20 @@ defineExpose({
 }
 
 .code-blocks {
-  margin-top: 16px;
+  margin-top: 8px;
   border-top: 1px solid var(--bg3);
   padding-top: 12px;
 }
 
 .code-block {
   margin-bottom: 8px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--bg3);
+}
+
+.code-block.staged {
+  border-color: var(--yellow);
 }
 
 .block-header {
@@ -341,7 +399,20 @@ defineExpose({
   gap: 8px;
   padding: 8px 12px;
   background: var(--bg2);
-  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.block-header:hover {
+  background: var(--bg3);
+}
+
+.toggle-icon {
+  font-size: 10px;
+  color: var(--grey1);
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .block-lang {
@@ -350,6 +421,7 @@ defineExpose({
   padding: 2px 8px;
   background: var(--bg3);
   border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .block-file {
@@ -359,6 +431,15 @@ defineExpose({
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.staged-badge {
+  font-size: 11px;
+  color: var(--bg0);
+  background: var(--yellow);
+  padding: 1px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .apply-btn {
@@ -372,6 +453,7 @@ defineExpose({
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.2s;
+  flex-shrink: 0;
 }
 
 .apply-btn:hover {
@@ -379,12 +461,28 @@ defineExpose({
 }
 
 .apply-btn.pending {
-  background: var(--yellow);
+  background: var(--red);
   color: var(--bg0);
 }
 
 .apply-btn.pending:hover {
-  background: var(--red);
+  opacity: 0.85;
+}
+
+.block-code {
+  padding: 12px;
+  background: var(--bg0);
+  border-top: 1px solid var(--bg3);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.block-code pre {
+  margin: 0;
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--fg);
 }
 
 .choose-btn {
@@ -403,6 +501,14 @@ defineExpose({
 .choose-btn:hover:not(:disabled) {
   background: var(--aqua);
   transform: translateY(-1px);
+}
+
+.choose-btn.has-staged {
+  background: var(--green);
+}
+
+.choose-btn.has-staged:hover:not(:disabled) {
+  background: var(--aqua);
 }
 
 .choose-btn:disabled {
