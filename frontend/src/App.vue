@@ -13,6 +13,9 @@ const isEyeTracking = ref(false)
 const eyeTrackerRef = ref(null)
 const answerPanelRef = ref(null)
 
+// A/B测试模式：treatment=启用眼动追踪，control=禁用眼动追踪
+const experimentMode = ref(localStorage.getItem('experimentMode') || 'treatment')
+
 const showFolderSelector = ref(true)
 const projectFolder = ref(null)
 const fileIndexer = new FileIndexer()
@@ -39,6 +42,11 @@ const userPreference = ref({
 const choiceSaved = ref(false)
 const savedToast = ref('')
 
+function toggleExperimentMode() {
+  experimentMode.value = experimentMode.value === 'treatment' ? 'control' : 'treatment'
+  localStorage.setItem('experimentMode', experimentMode.value)
+}
+
 function handleFileSelect(file) {
   selectedFile.value = file
 }
@@ -62,21 +70,28 @@ async function handleSubmit(prompt) {
     const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
     const contextFiles = formatFilesForPrompt(relevantFiles)
 
+    // 对照组不发送偏好数据
+    const requestBody = {
+      prompt,
+      contextFiles,
+      experimentMode: experimentMode.value
+    }
+    if (experimentMode.value === 'treatment') {
+      requestBody.preference = userPreference.value
+    }
+
     const response = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt,
-        preference: userPreference.value,
-        contextFiles
-      })
+      body: JSON.stringify(requestBody)
     })
     
     const data = await response.json()
     answerA.value = data.answerA
     answerB.value = data.answerB
     
-    if (eyeTrackerRef.value) {
+    // 只有实验组才启动眼动追踪
+    if (experimentMode.value === 'treatment' && eyeTrackerRef.value) {
       eyeTrackerRef.value.startTracking()
       isEyeTracking.value = true
     }
@@ -89,7 +104,9 @@ async function handleSubmit(prompt) {
 
 async function handleChoice(side) {
   userPreference.value.finalChoice = side
-  if (eyeTrackerRef.value) {
+  
+  // 只有实验组才停止眼动追踪
+  if (experimentMode.value === 'treatment' && eyeTrackerRef.value) {
     eyeTrackerRef.value.stopTracking()
     isEyeTracking.value = false
   }
@@ -117,11 +134,15 @@ async function handleChoice(side) {
     answerPanelRef.value.commitAll(side)
   }
 
+  // 对照组也发送偏好数据（但不包含眼动数据）
   try {
     await fetch('/api/preference', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preference: userPreference.value })
+      body: JSON.stringify({ 
+        preference: userPreference.value,
+        experimentMode: experimentMode.value
+      })
     })
     choiceSaved.value = true
     setTimeout(() => { choiceSaved.value = false }, 3000)
@@ -208,6 +229,15 @@ function handleRegionSwitch({ from, to }) {
         </svg>
         {{ projectFolder.name }}
       </p>
+      <div class="experiment-toggle">
+        <span class="toggle-label">实验模式:</span>
+        <button 
+          @click="toggleExperimentMode" 
+          :class="['toggle-btn', experimentMode]"
+        >
+          {{ experimentMode === 'treatment' ? '眼动追踪' : '对照组' }}
+        </button>
+      </div>
     </header>
 
     <main class="main">
@@ -263,6 +293,7 @@ function handleRegionSwitch({ from, to }) {
     </main>
 
     <EyeTracker 
+      v-if="experimentMode === 'treatment'"
       ref="eyeTrackerRef"
       @data="handleEyeData"
       @region-switch="handleRegionSwitch"
@@ -314,6 +345,43 @@ function handleRegionSwitch({ from, to }) {
   margin-top: 8px;
   color: var(--aqua);
   font-size: var(--font-sm);
+}
+
+.experiment-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.toggle-label {
+  font-size: var(--font-sm);
+  color: var(--grey1);
+}
+
+.toggle-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-btn.treatment {
+  background: var(--blue);
+  color: var(--bg0);
+}
+
+.toggle-btn.control {
+  background: var(--bg3);
+  color: var(--fg);
+}
+
+.toggle-btn:hover {
+  opacity: 0.85;
 }
 
 .main {

@@ -114,11 +114,17 @@ def ask():
     prompt = data.get("prompt", "")
     preference = data.get("preference", {})
     context_files = data.get("contextFiles", [])
+    experiment_mode = data.get("experimentMode", "treatment")
 
     if not prompt:
         return jsonify({"error": "请输入问题"}), 400
 
+    # 对照组不使用偏好数据
+    if experiment_mode == "control":
+        preference = {}
+
     result = generate_dual_answers(prompt, preference, context_files)
+    result["experimentMode"] = experiment_mode
     return jsonify(result)
 
 
@@ -127,10 +133,24 @@ def save_preference():
     """保存用户的偏好数据"""
     data = request.json
     preference = data.get("preference", {})
+    experiment_mode = data.get("experimentMode", "treatment")
 
-    # 可以保存到文件或数据库
-    # 这里简单打印
-    print("用户偏好数据:", json.dumps(preference, indent=2))
+    # 记录实验数据
+    experiment_data = {
+        "experimentMode": experiment_mode,
+        "preference": preference,
+        "timestamp": __import__("datetime").datetime.now().isoformat(),
+    }
+
+    # 保存到实验数据文件
+    experiment_file = "experiment_data.jsonl"
+    try:
+        with open(experiment_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(experiment_data, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"保存实验数据失败: {e}")
+
+    print("实验数据:", json.dumps(experiment_data, indent=2, ensure_ascii=False))
 
     return jsonify({"success": True})
 
