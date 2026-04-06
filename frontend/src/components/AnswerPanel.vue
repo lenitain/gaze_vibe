@@ -63,6 +63,7 @@ const allResolvedBlocks = computed(() => {
       const filePath = autoPath || manualPick || null
 
       if (!filePath && (isTerminal || !isFileApplicable(block))) continue
+      if (filePath && !isFileApplicable(block)) continue
       if (filePath && usedPaths.has(filePath)) continue
 
       if (filePath) usedPaths.add(filePath)

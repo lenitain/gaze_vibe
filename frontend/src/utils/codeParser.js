@@ -53,18 +53,25 @@ export function extractFilePath(block, text, nearbyFiles) {
 
 export function isFileApplicable(block) {
   const code = block.code
+  const lines = code.split('\n')
 
-  if (code.split('\n').length < 3) return false
+  if (lines.length < 3) return false
 
   if (/^(npm|yarn|pnpm|bun|pip|cargo|go)\s/.test(code)) return false
   if (/^(mkdir|cd|ls|cp|mv|rm|cat|echo|chmod)\s/.test(code)) return false
   if (/^(git|docker|kubectl)\s/.test(code)) return false
+
+  if (/Compiling |Finished |Running |Download |Downloaded |Installing |error\[/.test(code)) return false
+  if (/^\s*at\s+\S+:\d+:\d+/m.test(code)) return false
+  if (/Error:|Warning:|Traceback|panic:/.test(code)) return false
 
   if (/^(import|from|require|use|mod)\s/.test(code)) return true
   if (/^(export|module\.exports|pub)\s/.test(code)) return true
   if (/^\s*(function|class|interface|type|const|let|var|def|fn|struct|enum)\s/m.test(code)) return true
   if (/^\s*(public|private|protected|async|static)\s/m.test(code)) return true
   if (/=>\s*[{(]/.test(code) || /\{\s*$/.test(code)) return true
+  if (/^\s*\/\//.test(code) || /^\s*#/.test(code)) return true
+  if (/[=;{}]\s*$/.test(code)) return true
 
   return false
 }
