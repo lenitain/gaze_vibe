@@ -14,7 +14,8 @@ const emit = defineEmits(['choice', 'apply-change', 'unapply-change', 'diff-togg
 
 const selectedSide = ref(null)
 const diffState = ref(null)
-const fileChanges = ref(new Map())
+const fileChangesA = ref(new Map())
+const fileChangesB = ref(new Map())
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -129,29 +130,35 @@ const allResolvedBlocks = computed(() => {
 })
 
 const codeBlocksA = computed(() => allResolvedBlocks.value.filter(b => b.source === 'A'))
-const codeBlocksB = computed(() => allResolvedBlocks.value)
+const codeBlocksB = computed(() => allResolvedBlocks.value.filter(b => b.source === 'B'))
 
 const answerTextA = computed(() => props.answerA ? stripCodeBlocks(props.answerA) : '')
 const answerTextB = computed(() => props.answerB ? stripCodeBlocks(props.answerB) : '')
 
-const stagedCount = computed(() => fileChanges.value.size)
+const stagedCountA = computed(() => fileChangesA.value.size)
+const stagedCountB = computed(() => fileChangesB.value.size)
+
+function getFileChanges(side) {
+  return side === 'B' ? fileChangesB.value : fileChangesA.value
+}
 
 function selectA() {
   selectedSide.value = 'A'
-  emit('choice', 'A')
+  emit('choice', 'A', Object.fromEntries(fileChangesA.value))
 }
 
 function selectB() {
   selectedSide.value = 'B'
-  emit('choice', 'B')
+  emit('choice', 'B', Object.fromEntries(fileChangesB.value))
 }
 
 function handleApplyClick(block) {
   if (!block.filePath) return
 
-  const existing = fileChanges.value.get(block.filePath)
+  const changes = getFileChanges(block.source)
+  const existing = changes.get(block.filePath)
   if (existing) {
-    fileChanges.value.delete(block.filePath)
+    changes.delete(block.filePath)
     emit('unapply-change', { filePath: block.filePath })
     return
   }
@@ -162,7 +169,8 @@ function handleApplyClick(block) {
   diffState.value = {
     filePath: block.filePath,
     originalContent: file.content,
-    newContent: block.code
+    newContent: block.code,
+    source: block.source
   }
   emit('diff-toggle', true, block.source)
 }
@@ -175,23 +183,24 @@ function hideDiff() {
 function applyChange() {
   if (!diffState.value) return
 
-  const { filePath, newContent } = diffState.value
-  fileChanges.value.set(filePath, { content: newContent })
-  emit('apply-change', { filePath, content: newContent })
+  const { filePath, newContent, source } = diffState.value
+  getFileChanges(source).set(filePath, { content: newContent })
+  emit('apply-change', { filePath, content: newContent, source })
   hideDiff()
 }
 
-function getBtnClass(filePath) {
-  return fileChanges.value.has(filePath) ? 'pending' : ''
+function getBtnClass(filePath, source) {
+  return getFileChanges(source).has(filePath) ? 'pending' : ''
 }
 
-function getBtnText(filePath) {
-  return fileChanges.value.has(filePath) ? '已暂存 (取消)' : '暂存修改'
+function getBtnText(filePath, source) {
+  return getFileChanges(source).has(filePath) ? '已暂存 (取消)' : '暂存修改'
 }
 
-function getChooseBtnText() {
-  if (stagedCount.value > 0) {
-    return `选择此答案 (${stagedCount.value} 个文件待提交)`
+function getChooseBtnText(side) {
+  const count = side === 'B' ? stagedCountB.value : stagedCountA.value
+  if (count > 0) {
+    return `选择此答案 (${count} 个文件待提交)`
   }
   return '选择此答案'
 }
@@ -199,8 +208,10 @@ function getChooseBtnText() {
 defineExpose({
   regionAId,
   regionBId,
-  commitAll: () => {
-    fileChanges.value.clear()
+  commitAll: (side) => {
+    if (side === 'A') fileChangesA.value.clear()
+    else if (side === 'B') fileChangesB.value.clear()
+    else { fileChangesA.value.clear(); fileChangesB.value.clear() }
   }
 })
 </script>
@@ -225,19 +236,19 @@ defineExpose({
               v-for="block in codeBlocksA"
               :key="block.blockId"
               class="code-block"
-              :class="{ staged: block.filePath && fileChanges.has(block.filePath) }"
+              :class="{ staged: block.filePath && fileChangesA.has(block.filePath) }"
             >
               <div class="block-header">
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
                 <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
-                <span v-if="block.filePath && fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
+                <span v-if="block.filePath && fileChangesA.has(block.filePath)" class="staged-badge">已暂存</span>
                 <button
                   v-if="block.filePath"
                   class="apply-btn"
-                  :class="getBtnClass(block.filePath)"
+                  :class="getBtnClass(block.filePath, 'A')"
                   @click.stop="handleApplyClick(block)"
                 >
-                  {{ getBtnText(block.filePath) }}
+                  {{ getBtnText(block.filePath, 'A') }}
                 </button>
               </div>
               <div v-if="!block.filePath" class="block-code">
@@ -249,11 +260,11 @@ defineExpose({
       </div>
       <button
         class="choose-btn"
-        :class="{ 'has-staged': stagedCount > 0 }"
+        :class="{ 'has-staged': stagedCountA > 0 }"
         @click="selectA"
         :disabled="!answerA || isLoading"
       >
-        {{ getChooseBtnText() }}
+        {{ getChooseBtnText('A') }}
       </button>
     </div>
 
@@ -277,19 +288,19 @@ defineExpose({
               v-for="block in codeBlocksB"
               :key="block.blockId"
               class="code-block"
-              :class="{ staged: block.filePath && fileChanges.has(block.filePath) }"
+              :class="{ staged: block.filePath && fileChangesB.has(block.filePath) }"
             >
               <div class="block-header">
                 <span class="block-lang">{{ block.lang || 'code' }}</span>
                 <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
-                <span v-if="block.filePath && fileChanges.has(block.filePath)" class="staged-badge">已暂存</span>
+                <span v-if="block.filePath && fileChangesB.has(block.filePath)" class="staged-badge">已暂存</span>
                 <button
                   v-if="block.filePath"
                   class="apply-btn"
-                  :class="getBtnClass(block.filePath)"
+                  :class="getBtnClass(block.filePath, 'B')"
                   @click.stop="handleApplyClick(block)"
                 >
-                  {{ getBtnText(block.filePath) }}
+                  {{ getBtnText(block.filePath, 'B') }}
                 </button>
               </div>
               <div v-if="!block.filePath" class="block-code">
@@ -301,11 +312,11 @@ defineExpose({
       </div>
       <button
         class="choose-btn"
-        :class="{ 'has-staged': stagedCount > 0 }"
+        :class="{ 'has-staged': stagedCountB > 0 }"
         @click="selectB"
         :disabled="!answerB || isLoading"
       >
-        {{ getChooseBtnText() }}
+        {{ getChooseBtnText('B') }}
       </button>
     </div>
 

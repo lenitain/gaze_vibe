@@ -96,10 +96,11 @@ async function handleChoice(side) {
 
   let savedCount = 0
   for (const file of indexedFiles.value) {
-    if (file._originalContent) {
+    if (file._originalContent && file._stagedBy === side) {
       try {
         await fileIndexer.writeFile(file.path, file.content)
         delete file._originalContent
+        delete file._stagedBy
         savedCount++
       } catch (err) {
         console.error(`写入文件失败: ${file.path}`, err)
@@ -113,7 +114,7 @@ async function handleChoice(side) {
   }
 
   if (answerPanelRef.value) {
-    answerPanelRef.value.commitAll()
+    answerPanelRef.value.commitAll(side)
   }
 
   try {
@@ -129,10 +130,11 @@ async function handleChoice(side) {
   }
 }
 
-async function handleApplyChange({ filePath, content }) {
+async function handleApplyChange({ filePath, content, source }) {
   const file = indexedFiles.value.find(f => f.path === filePath)
   if (file) {
     file._originalContent = file.content
+    file._stagedBy = source
     file.content = content
   }
 
@@ -146,6 +148,7 @@ function handleUnapplyChange({ filePath }) {
   if (file && file._originalContent) {
     file.content = file._originalContent
     delete file._originalContent
+    delete file._stagedBy
   }
 
   if (selectedFile.value?.path === filePath) {
