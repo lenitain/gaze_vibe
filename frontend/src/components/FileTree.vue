@@ -65,7 +65,8 @@ function toggleDir(path) {
 
 function selectFile(file) {
   selectedFile.value = file.path
-  emit('select', file)
+  const originalFile = props.files.find(f => f.path === file.path)
+  emit('select', originalFile || file)
 }
 </script>
 
