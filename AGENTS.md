@@ -1,167 +1,79 @@
-# AGENTS.md - Guide for Coding Agents
+# AGENTS.md
 
-## Project Overview
+## Project
 
-GazeVibe is an eye-tracking AI programming assistant prototype. It generates dual answers (detailed vs concise) to programming questions and uses webcam-based eye tracking (WebGazer.js) to learn user reading preferences.
+GazeVibe: eye-tracking AI programming assistant. Vue 3 + Vite frontend, Python Flask + DeepSeek API backend. No TypeScript — plain JS with ES modules. No test framework, no linter configured.
 
-- **Frontend**: Vue 3 + Vite (`frontend/`)
-- **Backend**: Python Flask + DeepSeek/OpenAI API (`backend/`)
-- **No TypeScript** — plain JavaScript with ES modules
-- **No test framework** is currently configured
-- **No linter/formatter** is currently configured
-
-## Build & Run Commands
-
-### Frontend
+## Run
 
 ```bash
-cd frontend
-bun install          # or npm install (bun.lock present)
-bun run dev          # Dev server at http://localhost:5173
-bun run build        # Production build
-bun run preview      # Preview production build
-```
+# Frontend
+cd frontend && bun install && bun run dev   # http://localhost:5173
+bun run build                                 # production build
 
-### Backend
+# Backend (uses existing venv at backend/.venv)
+backend/.venv/bin/python backend/app.py       # http://localhost:8000
+# Or: cd backend && bash run.sh               # creates venv if needed
 
-```bash
-cd backend
-pip install -r requirements.txt
-python app.py        # Server at http://localhost:8000
-
-# Or use uv (preferred if available):
-bash run.sh          # Creates venv, installs deps, runs app
-```
-
-### Environment Variables
-
-```bash
-# API key is stored in backend/.env (not in git)
-DEEPSEEK_API_KEY=sk-xxxx
-```
-
-### Health Check
-
-```bash
+# Health check
 curl http://localhost:8000/api/health
 ```
 
-## Code Style Guidelines
+**Backend has no `pip`** — use the venv directly or `uv`. `pip install -r requirements.txt` will fail.
+
+**API key**: `DEEPSEEK_API_KEY` in `backend/.env` (not in git).
+
+## Architecture
+
+- Vite dev server proxies `/api` → `http://localhost:8000` (`vite.config.js`)
+- `/api/ask` makes **two separate** DeepSeek calls — one "detailed tutor" system prompt, one "concise assistant" system prompt — returns `{answerA, answerB}`
+- File System Access API (`window.showDirectoryPicker`, `readwrite` mode) — Chrome 86+ only
+- Files indexed in memory via `fileIndexer.js`, not persisted
+
+### Code Apply Workflow
+
+1. `codeParser.js` parses code blocks from AI answers, `extractFilePath` matches them to project files
+2. Only blocks with a matched file path get a "暂存修改" button; blocks without a path show code preview only
+3. Click "暂存修改" → DiffPreview modal → "应用修改" to stage → button becomes red "已暂存 (取消)"
+4. Click "选择此答案" → writes all staged files to disk via `fileIndexer.writeFile()`
+
+**Deduplication**: `allResolvedBlocks` in `AnswerPanel.vue` deduplicates across both panels by file path. If both answers target the same file, only the first panel's block is kept.
+
+**Content filtering**: `isFileApplicable()` rejects bash/shell commands, compiler output (`Compiling`, `Finished`, `Running`), error traces, and blocks under 3 lines.
+
+**File path extraction priority** (`extractFilePath` in `codeParser.js`):
+1. Explicit labels in text before code block (e.g., "file: src/main.rs")
+2. Path-like patterns (e.g., `src/foo.js`)
+3. Fuzzy filename matching
+4. First line of code block content (if it looks like a filename)
+5. Language-to-extension fallback against project files
+
+### Eye Tracking
+
+WebGazer initialized once, then `resume()`/`pause()` per session. Camera preview hidden via DOM manipulation. Tracking pauses when DiffPreview is open — eye data is silently discarded.
+
+### State
+
+- `fileChanges` Map (key: filePath, value: {content}) — shared between A and B panels in AnswerPanel
+- `file._originalContent` — set on stage, used for rollback on unstage, deleted after disk write
+- `commitAll()` only clears UI state; actual writes happen in `App.vue handleChoice()`
+
+## Code Style
 
 ### Frontend (Vue 3)
 
-**Vue SFC Convention**: Always use `<script setup>` (Composition API). Do not use Options API.
-
-**Naming Conventions**:
-- Components: PascalCase (`AnswerPanel.vue`, `ChatInput.vue`)
-- Component methods/functions: camelCase (`handleSubmit`, `startTracking`)
-- Refs/reactive state: camelCase (`isTracking`, `selectedSide`)
-- CSS classes: kebab-case (`answer-panel`, `choose-btn`)
-- Emits/events: kebab-case in templates (`@region-switch`)
-
-**Imports**: Group by source — Vue imports first, then local components, then utilities.
-
-**Props/Emits**: Use `defineProps` with object syntax (not runtime type-only). Use `defineEmits` with array of event names.
-
-**Styling**: Use `<style scoped>`. Prefer class-based styling over inline styles. Use CSS variables from `styles/everforest.css` (Everforest Dark Medium theme).
+- `<script setup>` only (Composition API), no Options API
+- Components: PascalCase, CSS classes: kebab-case
+- `<style scoped>`, CSS variables from `src/styles/everforest.css`
+- No comments unless asked, no emojis in code/commits
 
 ### Backend (Python Flask)
 
-**Formatting**: Follow PEP 8 conventions:
-- 4-space indentation
-- Double quotes for strings
-- Blank line between top-level definitions
-
-**Error Handling**: Use try/except with broad `Exception` catches in route handlers. Return JSON error responses with appropriate HTTP status codes (400 for bad input, 500 for server errors).
-
-**Route Pattern**: Define routes with `@app.route("/api/...", methods=[...])`. Keep handlers thin — delegate logic to helper functions.
-
-**API Responses**: Always return `jsonify({...})`. Include a `success: true/false` field in responses that perform actions.
-
-### General Conventions
-
-- **No comments unless asked**
-- **No emojis** in code or commit messages unless explicitly requested
-- API proxy: Vite proxies `/api` requests to `http://localhost:8000` (see `vite.config.js`)
-
-## Project Structure
-
-```
-gaze-vibe/
-├── frontend/
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.js
-│   └── src/
-│       ├── main.js
-│       ├── App.vue
-│       ├── styles/
-│       │   └── everforest.css    # Theme CSS variables
-│       ├── components/
-│       │   ├── AnswerPanel.vue   # Dual-answer display with code apply
-│       │   ├── ChatInput.vue     # Question input
-│       │   ├── DiffPreview.vue   # Diff preview for file changes
-│       │   ├── EyeTracker.vue    # WebGazer eye tracking
-│       │   ├── FolderSelector.vue # Local folder picker (File System Access API)
-│       │   ├── FileTree.vue      # File tree sidebar
-│       │   ├── FileTreeNode.vue  # Recursive tree node
-│       │   └── FileViewer.vue    # File content preview
-│       └── utils/
-│           ├── codeParser.js     # Parse code blocks and generate diffs
-│           ├── fileIndexer.js    # Index local project files
-│           └── fileSelector.js   # Smart file selection for AI context
-├── backend/
-│   ├── app.py                   # Flask API server
-│   ├── .env                     # API key (not in git)
-│   ├── requirements.txt
-│   └── run.sh                   # uv-based launcher
-└── README.md
-```
-
-## API Endpoints
-
-| Method | Path              | Description                |
-|--------|-------------------|----------------------------|
-| POST   | `/api/ask`        | Generate dual answers (accepts `contextFiles` for project code) |
-| POST   | `/api/preference` | Save user preference data  |
-| GET    | `/api/health`     | Health check               |
-
-## Key Architecture Notes
-
-**File System Access**: Uses browser's File System Access API (`window.showDirectoryPicker`) with `readwrite` mode. Requires Chrome 86+. Users select a folder on startup; files are indexed in memory.
-
-**Eye Tracking Lifecycle**: WebGazer is initialized once, then uses `resume()`/`pause()` for subsequent tracking sessions. Camera preview is hidden via DOM manipulation when tracking stops. Tracking pauses when diff preview is open.
-
-**Smart File Selection**: When user asks a question, `fileSelector.js` scores files by keyword relevance and sends top matches to the backend as `contextFiles`.
-
-**Code Apply Workflow**:
-1. AI answers are parsed for code blocks (`codeParser.js`)
-2. Each file can have at most one pending change
-3. Click "应用到文件" to stage (yellow button), click again to unstage
-4. Clicking "选择此答案" commits all staged changes to disk
-
-**State Management**:
-- `fileChanges` Map tracks pending changes (key: filePath, value: {content})
-- A and B panels share the same change state per file
-- Eye tracking data is not recorded when diff preview is open
+- PEP 8, 4-space indent, double quotes
+- Routes: `@app.route("/api/...", methods=[...])`
+- Error responses: `jsonify({...})` with status codes (400/500)
+- `success: true/false` field in action responses
 
 ## Theme
 
-Uses Everforest Dark Medium palette. All colors are CSS variables defined in `src/styles/everforest.css`:
-- Backgrounds: `--bg0` to `--bg5`
-- Foreground: `--fg`
-- Accents: `--blue`, `--green`, `--aqua`, `--red`, `--yellow`, `--purple`
-- Greys: `--grey0`, `--grey1`, `--grey2`
-- Font sizes: `--font-xs` (18px) to `--font-4xl` (42px)
-
-## Skills
-
-Use these skills when working on this project. Load them via the `skill` tool.
-
-| Skill | When to use |
-|-------|-------------|
-| `brainstorming` | **Required** before creating features, components, or modifying behavior |
-| `agent-browser` | Browser automation — navigating pages, filling forms, screenshots, testing WebGazer |
-| `code-simplifier` | Simplifying or cleaning up code |
-| `security-review` | Reviewing code for security vulnerabilities |
-| `find-bugs` | Finding bugs and code quality issues |
+Everforest Dark Medium. Font sizes are **1.5x scaled** — `--font-xs` is 18px (not the default 12px). All colors as CSS variables in `src/styles/everforest.css`.
