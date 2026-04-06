@@ -48,6 +48,14 @@ export function extractFilePath(block, text, nearbyFiles) {
     if (matched) return matched.path
   }
 
+  const firstLine = block.code.split('\n')[0].trim()
+  if (/\.\w{1,5}$/.test(firstLine) && !/[=;({\[]/.test(firstLine)) {
+    const matched = nearbyFiles.find(f =>
+      f.path.endsWith(firstLine) || f.path === firstLine || f.name === firstLine
+    )
+    if (matched) return matched.path
+  }
+
   return null
 }
 
