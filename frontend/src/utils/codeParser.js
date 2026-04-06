@@ -63,7 +63,7 @@ export function isFileApplicable(block) {
   const code = block.code
   const lines = code.split('\n')
 
-  if (lines.length < 3) return false
+  if (lines.length < 2) return false
 
   if (/^(npm|yarn|pnpm|bun|pip|cargo|go)\s/.test(code)) return false
   if (/^(mkdir|cd|ls|cp|mv|rm|cat|echo|chmod)\s/.test(code)) return false
@@ -80,6 +80,9 @@ export function isFileApplicable(block) {
   if (/=>\s*[{(]/.test(code) || /\{\s*$/.test(code)) return true
   if (/^\s*\/\//.test(code) || /^\s*#/.test(code)) return true
   if (/[=;{}]\s*$/.test(code)) return true
+  if (/^\s*\[.+\]\s*$/m.test(code)) return true
+  if (/<\w+[\s>]/.test(code)) return true
+  if (/^\s*\w+\s*=\s*/.test(code)) return true
 
   return false
 }
