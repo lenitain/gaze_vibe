@@ -14,7 +14,7 @@ const eyeTrackerRef = ref(null)
 const answerPanelRef = ref(null)
 
 // A/B测试模式：treatment=启用眼动追踪，control=禁用眼动追踪
-const experimentMode = ref(localStorage.getItem('experimentMode') || 'treatment')
+const experimentMode = ref('treatment')
 
 const showFolderSelector = ref(true)
 const projectFolder = ref(null)
@@ -45,7 +45,6 @@ const savedToast = ref('')
 function toggleExperimentMode() {
   const newMode = experimentMode.value === 'treatment' ? 'control' : 'treatment'
   experimentMode.value = newMode
-  localStorage.setItem('experimentMode', newMode)
   console.log('切换实验模式:', newMode)
 }
 
