@@ -36,12 +36,12 @@
   --statusline3: #e67e80;
 
   /* Font sizes */
-  --font-xs: 12px;
-  --font-sm: 14px;
-  --font-base: 15px;
-  --font-lg: 16px;
-  --font-xl: 18px;
-  --font-2xl: 20px;
-  --font-3xl: 24px;
-  --font-4xl: 28px;
+  --font-xs: 18px;
+  --font-sm: 21px;
+  --font-base: 22px;
+  --font-lg: 24px;
+  --font-xl: 27px;
+  --font-2xl: 30px;
+  --font-3xl: 36px;
+  --font-4xl: 42px;
 }

@@ -8,7 +8,7 @@ GazeVibe is an eye-tracking AI programming assistant prototype. It generates dua
 - **Backend**: Python Flask + DeepSeek/OpenAI API (`backend/`)
 - **No TypeScript** — plain JavaScript with ES modules
 - **No test framework** is currently configured
-- **No linter/formatter** is currently configured (though `.ruff_cache/` exists, ruff is not in requirements)
+- **No linter/formatter** is currently configured
 
 ## Build & Run Commands
 
@@ -46,40 +46,11 @@ export DEEPSEEK_API_KEY="your-api-key"   # Required for LLM features
 curl http://localhost:8000/api/health
 ```
 
-### Testing & Linting
-
-No test or lint tooling is configured. When adding tests:
-- Frontend: consider Vitest (`npm i -D vitest @vue/test-utils`)
-- Backend: consider pytest (`pip install pytest`), then `pytest` or `pytest test_app.py`
-
 ## Code Style Guidelines
 
 ### Frontend (Vue 3)
 
 **Vue SFC Convention**: Always use `<script setup>` (Composition API). Do not use Options API.
-
-```vue
-<script setup>
-import { ref, watch } from 'vue'
-
-const props = defineProps({ answerA: String, answerB: String })
-const emit = defineEmits(['choice'])
-const selected = ref(null)
-
-function selectA() {
-  selected.value = 'A'
-  emit('choice', 'A')
-}
-</script>
-
-<template>
-  <div>{{ answerA }}</div>
-</template>
-
-<style scoped>
-.answer { color: #fff; }
-</style>
-```
 
 **Naming Conventions**:
 - Components: PascalCase (`AnswerPanel.vue`, `ChatInput.vue`)
@@ -92,35 +63,25 @@ function selectA() {
 
 **Props/Emits**: Use `defineProps` with object syntax (not runtime type-only). Use `defineEmits` with array of event names.
 
-**Expose**: Use `defineExpose` to expose methods/refs to parent components when needed.
-
-**Styling**: Use `<style scoped>`. Prefer class-based styling over inline styles. Color palette is dark-themed (`#1e1e1e`, `#252526`, `#333`, `#4fc3f7`).
+**Styling**: Use `<style scoped>`. Prefer class-based styling over inline styles. Use CSS variables from `styles/everforest.css` (Everforest Dark Medium theme).
 
 ### Backend (Python Flask)
 
-**Formatting**: No formatter configured. Follow PEP 8 conventions visible in existing code:
+**Formatting**: Follow PEP 8 conventions:
 - 4-space indentation
 - Double quotes for strings
 - Blank line between top-level definitions
-
-**Docstrings**: Use triple-quoted docstrings for functions (Chinese is acceptable, as the project uses Chinese comments).
-
-**Imports**: Standard library first (`os`, `json`), then third-party (`flask`, `openai`). One import per line; no wildcard imports.
 
 **Error Handling**: Use try/except with broad `Exception` catches in route handlers. Return JSON error responses with appropriate HTTP status codes (400 for bad input, 500 for server errors).
 
 **Route Pattern**: Define routes with `@app.route("/api/...", methods=[...])`. Keep handlers thin — delegate logic to helper functions.
 
-**Naming**: Functions and variables: snake_case. Constants: UPPER_SNAKE_CASE (`ANTHROPIC_API_KEY`).
-
 **API Responses**: Always return `jsonify({...})`. Include a `success: true/false` field in responses that perform actions.
 
 ### General Conventions
 
-- **No comments unless asked** — code should be self-documenting
+- **No comments unless asked**
 - **No emojis** in code or commit messages unless explicitly requested
-- Keep functions focused and small
-- Prefer explicit over implicit
 - API proxy: Vite proxies `/api` requests to `http://localhost:8000` (see `vite.config.js`)
 
 ## Project Structure
@@ -134,10 +95,19 @@ gaze-vibe/
 │   └── src/
 │       ├── main.js
 │       ├── App.vue
-│       └── components/
-│           ├── AnswerPanel.vue   # Dual-answer display panel
-│           ├── ChatInput.vue     # Question input component
-│           └── EyeTracker.vue    # WebGazer eye tracking
+│       ├── styles/
+│       │   └── everforest.css    # Theme CSS variables
+│       ├── components/
+│       │   ├── AnswerPanel.vue   # Dual-answer display
+│       │   ├── ChatInput.vue     # Question input
+│       │   ├── EyeTracker.vue    # WebGazer eye tracking
+│       │   ├── FolderSelector.vue # Local folder picker (File System Access API)
+│       │   ├── FileTree.vue      # File tree sidebar
+│       │   ├── FileTreeNode.vue  # Recursive tree node
+│       │   └── FileViewer.vue    # File content preview
+│       └── utils/
+│           ├── fileIndexer.js    # Index local project files
+│           └── fileSelector.js   # Smart file selection for AI context
 ├── backend/
 │   ├── app.py                   # Flask API server
 │   ├── requirements.txt
@@ -149,9 +119,26 @@ gaze-vibe/
 
 | Method | Path              | Description                |
 |--------|-------------------|----------------------------|
-| POST   | `/api/ask`        | Generate dual answers      |
+| POST   | `/api/ask`        | Generate dual answers (accepts `contextFiles` for project code) |
 | POST   | `/api/preference` | Save user preference data  |
 | GET    | `/api/health`     | Health check               |
+
+## Key Architecture Notes
+
+**File System Access**: Uses browser's File System Access API (`window.showDirectoryPicker`) to read local project files. Requires Chrome 86+. Users select a folder on startup; files are indexed in memory.
+
+**Eye Tracking Lifecycle**: WebGazer is initialized once, then uses `resume()`/`pause()` for subsequent tracking sessions. Camera preview is hidden via DOM manipulation when tracking stops.
+
+**Smart File Selection**: When user asks a question, `fileSelector.js` scores files by keyword relevance and sends top matches to the backend as `contextFiles`.
+
+## Theme
+
+Uses Everforest Dark Medium palette. All colors are CSS variables defined in `src/styles/everforest.css`:
+- Backgrounds: `--bg0` to `--bg5`
+- Foreground: `--fg`
+- Accents: `--blue`, `--green`, `--aqua`, `--red`, `--yellow`, `--purple`
+- Greys: `--grey0`, `--grey1`, `--grey2`
+- Font sizes: `--font-xs` (12px) to `--font-4xl` (28px)
 
 ## Skills
 
@@ -160,7 +147,7 @@ Use these skills when working on this project. Load them via the `skill` tool.
 | Skill | When to use |
 |-------|-------------|
 | `brainstorming` | **Required** before creating features, components, or modifying behavior |
-| `agent-browser` | Browser automation — navigating pages, filling forms, taking screenshots, testing WebGazer interactions |
-| `code-simplifier` | Simplifying or cleaning up code for clarity and maintainability |
-| `security-review` | Reviewing code for security vulnerabilities (injection, XSS, auth issues) |
-| `find-bugs` | Finding bugs and code quality issues in local branch changes |
+| `agent-browser` | Browser automation — navigating pages, filling forms, screenshots, testing WebGazer |
+| `code-simplifier` | Simplifying or cleaning up code |
+| `security-review` | Reviewing code for security vulnerabilities |
+| `find-bugs` | Finding bugs and code quality issues |
