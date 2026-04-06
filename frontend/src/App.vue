@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import AnswerPanel from './components/AnswerPanel.vue'
 import ChatInput from './components/ChatInput.vue'
 import EyeTracker from './components/EyeTracker.vue'
