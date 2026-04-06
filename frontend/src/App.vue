@@ -4,6 +4,8 @@ import AnswerPanel from './components/AnswerPanel.vue'
 import ChatInput from './components/ChatInput.vue'
 import EyeTracker from './components/EyeTracker.vue'
 import FolderSelector from './components/FolderSelector.vue'
+import FileTree from './components/FileTree.vue'
+import FileViewer from './components/FileViewer.vue'
 import { FileIndexer } from './utils/fileIndexer.js'
 import { selectRelevantFiles, formatFilesForPrompt } from './utils/fileSelector.js'
 
@@ -14,6 +16,9 @@ const showFolderSelector = ref(true)
 const projectFolder = ref(null)
 const fileIndexer = new FileIndexer()
 const indexedFiles = ref([])
+
+const selectedFile = ref(null)
+const showFileExplorer = ref(true)
 
 const answerA = ref('')
 const answerB = ref('')
@@ -28,6 +33,10 @@ const userPreference = ref({
 })
 
 const choiceSaved = ref(false)
+
+function handleFileSelect(file) {
+  selectedFile.value = file
+}
 
 async function handleFolderSelect(dirHandle) {
   projectFolder.value = dirHandle
@@ -129,24 +138,48 @@ function handleRegionSwitch({ from, to }) {
     </header>
 
     <main class="main">
-      <div v-if="!answerA && !answerB" class="welcome">
-        <h2>欢迎使用 GazeVibe</h2>
-        <p>输入你的编程问题，获取双份不同风格的回答</p>
-        <p class="hint">系统会通过眼动追踪分析你的阅读偏好，优化后续回答</p>
+      <div class="sidebar" v-if="showFileExplorer && !showFolderSelector">
+        <FileTree
+          :files="indexedFiles"
+          @select="handleFileSelect"
+        />
       </div>
 
-      <AnswerPanel
-        v-if="answerA || answerB"
-        :answerA="answerA"
-        :answerB="answerB"
-        :is-loading="isLoading"
-        @choice="handleChoice"
-      />
+      <div class="content-area">
+        <div class="explorer-toggle" v-if="!showFolderSelector">
+          <button @click="showFileExplorer = !showFileExplorer" :class="{ active: showFileExplorer }">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            文件
+          </button>
+        </div>
 
-      <ChatInput 
-        :disabled="isLoading" 
-        @submit="handleSubmit" 
-      />
+        <FileViewer
+          v-if="selectedFile && showFileExplorer"
+          :file="selectedFile"
+          class="file-viewer"
+        />
+
+        <div v-if="!answerA && !answerB && !selectedFile" class="welcome">
+          <h2>欢迎使用 GazeVibe</h2>
+          <p>输入你的编程问题，获取双份不同风格的回答</p>
+          <p class="hint">系统会通过眼动追踪分析你的阅读偏好，优化后续回答</p>
+        </div>
+
+        <AnswerPanel
+          v-if="answerA || answerB"
+          :answerA="answerA"
+          :answerB="answerB"
+          :is-loading="isLoading"
+          @choice="handleChoice"
+        />
+
+        <ChatInput
+          :disabled="isLoading"
+          @submit="handleSubmit"
+        />
+      </div>
     </main>
 
     <EyeTracker 
@@ -200,8 +233,57 @@ function handleRegionSwitch({ from, to }) {
 .main {
   flex: 1;
   display: flex;
+  overflow: hidden;
+  gap: 16px;
+}
+
+.sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.content-area {
+  flex: 1;
+  display: flex;
   flex-direction: column;
   overflow: hidden;
+  gap: 12px;
+}
+
+.explorer-toggle {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.explorer-toggle button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg1);
+  border: 1px solid var(--bg3);
+  border-radius: 6px;
+  color: var(--grey1);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.explorer-toggle button:hover {
+  background: var(--bg2);
+  color: var(--fg);
+}
+
+.explorer-toggle button.active {
+  background: var(--bg-blue);
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.file-viewer {
+  flex: 1;
+  min-height: 0;
 }
 
 .welcome {
