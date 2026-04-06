@@ -33,11 +33,36 @@ const allResolvedBlocks = computed(() => {
     for (let index = 0; index < rawBlocks.length; index++) {
       const block = rawBlocks[index]
       const blockId = `${source}-${index}`
-      const autoPath = extractFilePath(block, answer, fileIndex)
+      const lang = (block.lang || '').toLowerCase()
+
+      const isTerminal = ['bash', 'sh', 'shell', 'powershell', 'cmd', 'zsh', 'fish', 'console', 'terminal', 'bat'].includes(lang)
+
+      let autoPath = null
+      if (!isTerminal) {
+        autoPath = extractFilePath(block, answer, fileIndex)
+        if (autoPath && lang) {
+          const ext = autoPath.split('.').pop().toLowerCase()
+          const langExtMap = {
+            javascript: ['js', 'mjs', 'cjs'], typescript: ['ts', 'mts', 'cts'],
+            jsx: ['jsx'], tsx: ['tsx'], python: ['py'], rust: ['rs'],
+            go: ['go'], java: ['java'], kotlin: ['kt'], swift: ['swift'],
+            ruby: ['rb'], php: ['php'], html: ['html', 'htm'], css: ['css'],
+            scss: ['scss'], less: ['less'], json: ['json'], yaml: ['yaml', 'yml'],
+            toml: ['toml'], xml: ['xml'], sql: ['sql'], c: ['c'], cpp: ['cpp', 'cc', 'cxx'],
+            h: ['h'], hpp: ['hpp'], csharp: ['cs'], dart: ['dart'], lua: ['lua'],
+            r: ['r'], scala: ['scala'], vue: ['vue'], svelte: ['svelte'],
+          }
+          const validExts = langExtMap[lang]
+          if (validExts && !validExts.includes(ext)) {
+            autoPath = null
+          }
+        }
+      }
+
       const manualPick = manualFilePicks.value.get(blockId)
       const filePath = autoPath || manualPick || null
 
-      if (!filePath && !isFileApplicable(block)) continue
+      if (!filePath && (isTerminal || !isFileApplicable(block))) continue
       if (filePath && usedPaths.has(filePath)) continue
 
       if (filePath) usedPaths.add(filePath)
