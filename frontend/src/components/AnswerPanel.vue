@@ -135,7 +135,7 @@ function handleApplyClick(block) {
     originalContent: file.content,
     newContent: block.code
   }
-  emit('diff-toggle', true)
+  emit('diff-toggle', true, block.source)
 }
 
 function hideDiff() {

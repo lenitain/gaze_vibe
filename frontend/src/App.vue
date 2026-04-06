@@ -26,6 +26,7 @@ const answerB = ref('')
 const isLoading = ref(false)
 
 const diffOpen = ref(false)
+const diffOpenSide = ref(null)
 
 const userPreference = ref({
   timeOnA: 0,
@@ -155,12 +156,20 @@ function handleUnapplyChange({ filePath }) {
   }
 }
 
-function handleDiffToggle(isOpen) {
+function handleDiffToggle(isOpen, side) {
   diffOpen.value = isOpen
+  diffOpenSide.value = isOpen ? side : null
 }
 
 function handleEyeData(data) {
-  if (diffOpen.value) return
+  if (diffOpen.value) {
+    if (diffOpenSide.value === 'A') {
+      userPreference.value.timeOnA += data.duration
+    } else if (diffOpenSide.value === 'B') {
+      userPreference.value.timeOnB += data.duration
+    }
+    return
+  }
 
   if (data.region === 'A') {
     userPreference.value.timeOnA += data.duration
