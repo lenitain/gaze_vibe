@@ -146,34 +146,36 @@ function handleRegionSwitch({ from, to }) {
       </div>
 
       <div class="content-area">
-        <div class="explorer-toggle" v-if="!showFolderSelector">
-          <button @click="showFileExplorer = !showFileExplorer" :class="{ active: showFileExplorer }">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            文件
-          </button>
+        <div class="main-content">
+          <div class="explorer-toggle" v-if="!showFolderSelector">
+            <button @click="showFileExplorer = !showFileExplorer" :class="{ active: showFileExplorer }">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+              文件
+            </button>
+          </div>
+
+          <FileViewer
+            v-if="selectedFile && showFileExplorer"
+            :file="selectedFile"
+            class="file-viewer"
+          />
+
+          <div v-if="!answerA && !answerB && !selectedFile" class="welcome">
+            <h2>欢迎使用 GazeVibe</h2>
+            <p>输入你的编程问题，获取双份不同风格的回答</p>
+            <p class="hint">系统会通过眼动追踪分析你的阅读偏好，优化后续回答</p>
+          </div>
+
+          <AnswerPanel
+            v-if="answerA || answerB"
+            :answerA="answerA"
+            :answerB="answerB"
+            :is-loading="isLoading"
+            @choice="handleChoice"
+          />
         </div>
-
-        <FileViewer
-          v-if="selectedFile && showFileExplorer"
-          :file="selectedFile"
-          class="file-viewer"
-        />
-
-        <div v-if="!answerA && !answerB && !selectedFile" class="welcome">
-          <h2>欢迎使用 GazeVibe</h2>
-          <p>输入你的编程问题，获取双份不同风格的回答</p>
-          <p class="hint">系统会通过眼动追踪分析你的阅读偏好，优化后续回答</p>
-        </div>
-
-        <AnswerPanel
-          v-if="answerA || answerB"
-          :answerA="answerA"
-          :answerB="answerB"
-          :is-loading="isLoading"
-          @choice="handleChoice"
-        />
 
         <ChatInput
           :disabled="isLoading"
@@ -248,7 +250,14 @@ function handleRegionSwitch({ from, to }) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  overflow: hidden;
 }
 
 .explorer-toggle {
