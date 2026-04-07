@@ -20,6 +20,14 @@ const indexedFiles = ref([])
 
 const selectedFile = ref(null)
 const showFileExplorer = ref(true)
+const isLoading = ref(false)
+const answerA = ref('')
+const answerB = ref('')
+const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
+const diffOpen = ref(false)
+const diffOpenSide = ref(null)
+const savedToast = ref('')
+const choiceSaved = ref(false)
 
 // A/B测试模式：treatment=启用眼动追踪，control=禁用眼动追踪
 const experimentMode = ref('treatment')
