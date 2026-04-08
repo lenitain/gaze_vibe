@@ -21,12 +21,15 @@ const fileChangesA = ref(new Map())
 const fileChangesB = ref(new Map())
 const choiceDisabled = ref(false)
 let autoSelected = false
+const overridden = ref(false)
+const effectiveAutoMode = computed(() => props.autoMode && !overridden.value)
 
 watch(() => props.autoMode, (isAuto) => {
   if (isAuto && props.preferredSide && !selectedSide.value && !autoSelected) {
     selectedSide.value = props.preferredSide
     choiceDisabled.value = true
     autoSelected = true
+    overridden.value = false
   }
 }, { immediate: true })
 
@@ -34,6 +37,7 @@ function handleOverride() {
   selectedSide.value = null
   choiceDisabled.value = false
   autoSelected = false
+  overridden.value = true
 }
 
 const regionAId = 'answer-region-a'
@@ -243,6 +247,7 @@ defineExpose({
     selectedSide.value = null
     choiceDisabled.value = false
     autoSelected = false
+    overridden.value = false
     fileChangesA.value.clear()
     fileChangesB.value.clear()
   },
@@ -261,15 +266,15 @@ defineExpose({
       :id="regionAId"
       :class="{ 
         selected: selectedSide === 'A',
-        hidden: choiceDisabled && selectedSide !== 'A' && !autoMode,
-        collapsed: autoMode && preferredSide === 'B',
-        expanded: autoMode && preferredSide === 'A'
+        hidden: choiceDisabled && selectedSide !== 'A' && !effectiveAutoMode,
+        collapsed: effectiveAutoMode && preferredSide === 'B',
+        expanded: effectiveAutoMode && preferredSide === 'A'
       }"
     >
       <div class="answer-header">
         <span class="badge detailed">详细解答</span>
         <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个文件</span>
-        <span v-if="preferredSide === 'A' && !autoMode" class="preference-hint">推断偏好</span>
+        <span v-if="preferredSide === 'A' && !effectiveAutoMode" class="preference-hint">推断偏好</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'A' }">
         <div v-if="isLoading" class="loading">
