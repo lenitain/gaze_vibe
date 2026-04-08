@@ -30,21 +30,48 @@ const diffOpenSide = ref(null)
 const savedToast = ref('')
 const choiceSaved = ref(false)
 
-// A/B测试模式：treatment=启用眼动追踪，control=禁用眼动追踪
-const experimentMode = ref('treatment')
-const isTreatment = computed(() => experimentMode.value === 'treatment')
+// Confidence inference
+const ALPHA = 0.3
+const MIN_EYE_TIME = 2000
+const STRONG_WEIGHT = 0.7
+const emaBias = ref(0.5)
+const roundCount = ref(0)
+const decisionStartTime = ref(null)
+const confidence = computed(() => {
+  const raw = Math.min(1, Math.abs(emaBias.value - 0.5) * 4)
+  const maturity = Math.min(1, roundCount.value / 3)
+  return raw * maturity
+})
+const preferredSide = computed(() => {
+  if (confidence.value < 0.5) return null
+  return emaBias.value > 0.5 ? 'A' : 'B'
+})
+const autoMode = computed(() =>
+  experimentMode.value === 'full' && confidence.value >= 0.8
+)
 
-function toggleMode() {
-  experimentMode.value = experimentMode.value === 'treatment' ? 'control' : 'treatment'
+function updateConfidence(eyeTimeA, eyeTimeB, explicitChoice) {
+  const totalEye = eyeTimeA + eyeTimeB
+  if (totalEye > MIN_EYE_TIME) {
+    const rawBias = eyeTimeA / totalEye
+    emaBias.value = ALPHA * rawBias + (1 - ALPHA) * emaBias.value
+  }
+  if (explicitChoice === 'A') {
+    emaBias.value = STRONG_WEIGHT * 1.0 + (1 - STRONG_WEIGHT) * emaBias.value
+  } else if (explicitChoice === 'B') {
+    emaBias.value = STRONG_WEIGHT * 0.0 + (1 - STRONG_WEIGHT) * emaBias.value
+  }
+  roundCount.value++
 }
 
-function toggleExperimentMode() {
-  if (experimentMode.value === 'treatment') {
-    experimentMode.value = 'control'
-  } else {
-    experimentMode.value = 'treatment'
-  }
-  console.log('切换实验模式:', experimentMode.value)
+// A/B测试模式：full=眼动+自动选择，manual=眼动+手动选择，control=无眼动
+const experimentModes = ['full', 'manual', 'control']
+const experimentMode = ref('full')
+const isTreatment = computed(() => experimentMode.value !== 'control')
+
+function toggleMode() {
+  const idx = experimentModes.indexOf(experimentMode.value)
+  experimentMode.value = experimentModes[(idx + 1) % experimentModes.length]
 }
 
 function handleFileSelect(file) {
@@ -72,14 +99,10 @@ async function handleSubmit(prompt) {
     const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
     const contextFiles = formatFilesForPrompt(relevantFiles)
 
-    // 对照组不发送偏好数据
     const requestBody = {
       prompt,
       contextFiles,
       experimentMode: experimentMode.value
-    }
-    if (experimentMode.value === 'treatment') {
-      requestBody.preference = userPreference.value
     }
 
     const response = await fetch('/api/ask', {
@@ -91,9 +114,18 @@ async function handleSubmit(prompt) {
     const data = await response.json()
     answerA.value = data.answerA
     answerB.value = data.answerB
+
+    // 上一轮眼动数据参与置信度计算
+    updateConfidence(
+      userPreference.value.timeOnA,
+      userPreference.value.timeOnB,
+      null
+    )
+    userPreference.value.timeOnA = 0
+    userPreference.value.timeOnB = 0
+    decisionStartTime.value = Date.now()
     
-    // 只有实验组才启动眼动追踪
-    if (experimentMode.value === 'treatment' && eyeTrackerRef.value) {
+    if (experimentMode.value === 'full' && eyeTrackerRef.value) {
       eyeTrackerRef.value.startTracking()
       isEyeTracking.value = true
     }
@@ -106,8 +138,13 @@ async function handleSubmit(prompt) {
 
 async function handleChoice(side) {
   userPreference.value.finalChoice = side
+  const decisionTime = decisionStartTime.value
+    ? Date.now() - decisionStartTime.value
+    : null
+
+  updateConfidence(0, 0, side)
   
-  if (experimentMode.value === 'treatment' && eyeTrackerRef.value) {
+  if (experimentMode.value === 'full' && eyeTrackerRef.value) {
     eyeTrackerRef.value.stopTracking()
     isEyeTracking.value = false
   }
@@ -117,7 +154,10 @@ async function handleChoice(side) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
       preference: userPreference.value,
-      experimentMode: experimentMode.value
+      experimentMode: experimentMode.value,
+      emaBias: emaBias.value,
+      confidence: confidence.value,
+      decisionTime
     })
   }).then(() => {
     choiceSaved.value = true
@@ -232,12 +272,15 @@ function handleRegionSwitch({ from, to }) {
         {{ projectFolder.name }}
       </p>
       <div class="experiment-toggle">
-        <span class="toggle-label">实验模式: {{ experimentMode }}</span>
+        <span class="toggle-label">
+          实验模式:
+          {{ experimentMode === 'full' ? '完整' : experimentMode === 'manual' ? '手动' : '对照' }}
+        </span>
         <button 
           @click.stop="toggleMode" 
           :class="['toggle-btn', experimentMode]"
         >
-          {{ isTreatment ? '眼动追踪' : '对照组' }}
+          {{ experimentMode === 'full' ? '眼动+自动' : experimentMode === 'manual' ? '眼动+手动' : '对照组' }}
         </button>
       </div>
     </header>
@@ -288,6 +331,9 @@ function handleRegionSwitch({ from, to }) {
             :answerB="answerB"
             :is-loading="isLoading"
             :files="indexedFiles"
+            :preferred-side="preferredSide"
+            :auto-mode="autoMode"
+            :confidence="confidence"
             @choice="handleChoice"
             @apply-change="handleApplyChange"
             @unapply-change="handleUnapplyChange"
@@ -303,7 +349,7 @@ function handleRegionSwitch({ from, to }) {
     </main>
 
     <EyeTracker 
-      v-if="experimentMode === 'treatment'"
+      v-if="isTreatment"
       ref="eyeTrackerRef"
       @data="handleEyeData"
       @region-switch="handleRegionSwitch"
@@ -382,6 +428,16 @@ function handleRegionSwitch({ from, to }) {
 
 .toggle-btn.treatment {
   background: var(--blue);
+  color: var(--bg0);
+}
+
+.toggle-btn.full {
+  background: var(--blue);
+  color: var(--bg0);
+}
+
+.toggle-btn.manual {
+  background: var(--aqua);
   color: var(--bg0);
 }
 
