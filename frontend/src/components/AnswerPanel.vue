@@ -23,11 +23,12 @@ const regionBId = 'answer-region-b'
 
 const allResolvedBlocks = computed(() => {
   const fileIndex = props.files || []
-  const usedPaths = new Set()
+  const usedPathsMap = { A: new Set(), B: new Set() }
   const results = []
 
   function resolveAnswer(answer, source) {
     if (!answer) return
+    const usedPaths = usedPathsMap[source]
     const rawBlocks = parseCodeBlocks(answer)
 
     for (let index = 0; index < rawBlocks.length; index++) {
@@ -111,6 +112,7 @@ const allResolvedBlocks = computed(() => {
     }
 
     for (const source of ['A', 'B']) {
+      const usedPaths = usedPathsMap[source]
       const panelBlocks = results.filter(b => b.source === source)
       const hasPath = panelBlocks.some(b => b.filePath)
       if (hasPath) continue
@@ -119,9 +121,10 @@ const allResolvedBlocks = computed(() => {
       if (noPathBlock) {
         const exts = langExtMap[noPathBlock.lang.toLowerCase()]
         const match = fileIndex.find(f => exts.includes(f.path.split('.').pop().toLowerCase()))
-        if (match) {
+        if (match && !usedPaths.has(match.path)) {
           noPathBlock.filePath = match.path
           noPathBlock.autoMatched = true
+          usedPaths.add(match.path)
         }
       }
     }
