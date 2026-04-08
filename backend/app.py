@@ -44,20 +44,29 @@ def adjust_system_prompt(base_prompt: str, adjustments: dict, prompt_type: str) 
     detail = adjustments["detail_score"]
     explanation = adjustments["explanation_score"]
 
-    # 根据分数添加调整指令
     adjustment_notes = []
 
-    # 详细程度调整
-    if detail > 0.6:
-        adjustment_notes.append("用户偏好详细解答，请提供更完整的解释和示例")
-    elif detail < 0.4:
-        adjustment_notes.append("用户偏好简洁解答，请精简解释，直接给核心代码")
+    # 详细程度调整（连续梯度，偏离 0.5 即有微调）
+    if detail > 0.55:
+        strength = "更" if detail < 0.65 else "明显"
+        adjustment_notes.append(f"用户偏好详细解答，请提供{strength}完整的解释和示例")
+    elif detail < 0.45:
+        strength = "更" if detail > 0.35 else "明显"
+        adjustment_notes.append(
+            f"用户偏好简洁解答，请{strength}精简解释，直接给核心代码"
+        )
 
-    # 解释 vs 代码调整
-    if explanation > 0.6:
-        adjustment_notes.append("用户喜欢原理性解释，请增加设计思路和原理解释")
-    elif explanation < 0.4:
-        adjustment_notes.append("用户喜欢直接看代码，请减少文字解释，代码优先")
+    # 解释 vs 代码调整（连续梯度）
+    if explanation > 0.55:
+        strength = "适当" if explanation < 0.65 else "多"
+        adjustment_notes.append(
+            f"用户喜欢原理性解释，请{strength}增加设计思路和原理解释"
+        )
+    elif explanation < 0.45:
+        strength = "适当" if explanation > 0.35 else "尽量"
+        adjustment_notes.append(
+            f"用户喜欢直接看代码，请{strength}减少文字解释，代码优先"
+        )
 
     if adjustment_notes:
         adjustment_text = "\n\n[用户偏好调整]\n" + "\n".join(
@@ -94,9 +103,13 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
         print_thoughts(eye_result["thoughts"])
 
         if eye_result["valid"]:
+            # 即时调整用原始分数（响应快），长期模型用 EMA
+            current = eye_result.get("current_scores", {})
             adjustments = {
-                "detail_score": eye_result["detail_score"],
-                "explanation_score": eye_result["explanation_score"],
+                "detail_score": current.get("detail_score", eye_result["detail_score"]),
+                "explanation_score": current.get(
+                    "explanation_score", eye_result["explanation_score"]
+                ),
             }
             print(f"\n  调整参数:")
             print(f"    detail_score = {adjustments['detail_score']:.4f}")

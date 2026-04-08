@@ -87,7 +87,7 @@ function toggleMode() {
     isEyeTracking.value = false
   }
 
-  // 非对照组启动追踪
+  // 进入实验组时立即启动追踪
   if (experimentMode.value !== 'control' && eyeTrackerRef.value) {
     eyeTrackerRef.value.startTracking()
     isEyeTracking.value = true

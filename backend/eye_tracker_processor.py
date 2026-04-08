@@ -123,6 +123,7 @@ class EyeTrackerProcessor:
             "valid": True,
             "thoughts": thoughts,
             **final_scores,
+            "current_scores": current_scores,
         }
 
     def _extract_metrics(self, eye_data: dict) -> dict:
