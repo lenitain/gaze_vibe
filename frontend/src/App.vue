@@ -66,6 +66,7 @@ async function handleFolderSelect(dirHandle) {
 async function handleSubmit(prompt) {
   currentQuestion.value = prompt
   isLoading.value = true
+  answerPanelRef.value?.resetChoice()
 
   try {
     const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)

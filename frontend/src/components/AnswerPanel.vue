@@ -221,6 +221,12 @@ function getChooseBtnText(side) {
 defineExpose({
   regionAId,
   regionBId,
+  resetChoice() {
+    selectedSide.value = null
+    choiceDisabled.value = false
+    fileChangesA.value.clear()
+    fileChangesB.value.clear()
+  },
   commitAll: (side) => {
     if (side === 'A') fileChangesA.value.clear()
     else if (side === 'B') fileChangesB.value.clear()
