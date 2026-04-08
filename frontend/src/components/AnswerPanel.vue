@@ -134,7 +134,7 @@ const allResolvedBlocks = computed(() => {
 })
 
 const codeBlocksA = computed(() => allResolvedBlocks.value.filter(b => b.source === 'A'))
-const codeBlocksB = computed(() => allResolvedBlocks.value.map(b => ({ ...b, _panel: 'B' })))
+const codeBlocksB = computed(() => allResolvedBlocks.value.filter(b => b.source === 'B').map(b => ({ ...b, _panel: 'B' })))
 
 const answerTextA = computed(() => props.answerA ? stripCodeBlocks(props.answerA) : '')
 const answerTextB = computed(() => props.answerB ? stripCodeBlocks(props.answerB) : '')
