@@ -2,3 +2,5 @@
 {"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 7537, "timeOnB": 2434, "leftToRight": 2, "rightToLeft": 0}, "timestamp": "2026-04-07T15:42:33.785219"}
 {"experimentMode": "treatment", "preference": {"finalChoice": "A", "timeOnA": 42659, "timeOnB": 601, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T13:09:30.335882"}
 {"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 39281, "timeOnB": 15580, "leftToRight": 4, "rightToLeft": 2}, "timestamp": "2026-04-08T13:29:09.677720"}
+{"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 15253, "timeOnB": 639, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T13:32:54.055079"}
+{"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 26228, "timeOnB": 353, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T13:38:03.422800"}
