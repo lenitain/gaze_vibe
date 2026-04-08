@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { parseCodeBlocks, extractFilePath, stripCodeBlocks, isFileApplicable } from '../utils/codeParser.js'
 import DiffPreview from './DiffPreview.vue'
 
@@ -7,7 +7,10 @@ const props = defineProps({
   answerA: String,
   answerB: String,
   isLoading: Boolean,
-  files: Array
+  files: Array,
+  preferredSide: String,
+  autoMode: Boolean,
+  confidence: Number
 })
 
 const emit = defineEmits(['choice', 'apply-change', 'unapply-change', 'diff-toggle'])
@@ -17,6 +20,21 @@ const diffState = ref(null)
 const fileChangesA = ref(new Map())
 const fileChangesB = ref(new Map())
 const choiceDisabled = ref(false)
+let autoSelected = false
+
+watch(() => props.autoMode, (isAuto) => {
+  if (isAuto && props.preferredSide && !selectedSide.value && !autoSelected) {
+    selectedSide.value = props.preferredSide
+    choiceDisabled.value = true
+    autoSelected = true
+  }
+}, { immediate: true })
+
+function handleOverride() {
+  selectedSide.value = null
+  choiceDisabled.value = false
+  autoSelected = false
+}
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -224,6 +242,7 @@ defineExpose({
   resetChoice() {
     selectedSide.value = null
     choiceDisabled.value = false
+    autoSelected = false
     fileChangesA.value.clear()
     fileChangesB.value.clear()
   },
@@ -242,12 +261,15 @@ defineExpose({
       :id="regionAId"
       :class="{ 
         selected: selectedSide === 'A',
-        hidden: choiceDisabled && selectedSide !== 'A'
+        hidden: choiceDisabled && selectedSide !== 'A' && !autoMode,
+        collapsed: autoMode && preferredSide === 'B',
+        expanded: autoMode && preferredSide === 'A'
       }"
     >
       <div class="answer-header">
         <span class="badge detailed">详细解答</span>
         <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个文件</span>
+        <span v-if="preferredSide === 'A' && !autoMode" class="preference-hint">推断偏好</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'A' }">
         <div v-if="isLoading" class="loading">
@@ -292,21 +314,31 @@ defineExpose({
       >
         {{ getChooseBtnText('A') }}
       </button>
+      <button
+        v-if="autoMode && preferredSide === 'B'"
+        class="override-btn"
+        @click="handleOverride"
+      >
+        展开对比
+      </button>
     </div>
 
-    <div class="divider" :class="{ hidden: choiceDisabled }"></div>
+    <div class="divider" :class="{ hidden: choiceDisabled && !autoMode }"></div>
 
     <div 
       class="answer-col" 
       :id="regionBId"
       :class="{ 
         selected: selectedSide === 'B',
-        hidden: choiceDisabled && selectedSide !== 'B'
+        hidden: choiceDisabled && selectedSide !== 'B' && !autoMode,
+        collapsed: autoMode && preferredSide === 'A',
+        expanded: autoMode && preferredSide === 'B'
       }"
     >
       <div class="answer-header">
         <span class="badge concise">简洁解答</span>
         <span v-if="codeBlocksB.length > 0" class="block-count">{{ codeBlocksB.length }} 个文件</span>
+        <span v-if="preferredSide === 'B' && !autoMode" class="preference-hint">推断偏好</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'B' }">
         <div v-if="isLoading" class="loading">
@@ -350,6 +382,13 @@ defineExpose({
         :disabled="!answerB || isLoading || choiceDisabled"
       >
         {{ getChooseBtnText('B') }}
+      </button>
+      <button
+        v-if="autoMode && preferredSide === 'A'"
+        class="override-btn"
+        @click="handleOverride"
+      >
+        展开对比
       </button>
     </div>
 
@@ -396,6 +435,15 @@ defineExpose({
   flex: 1;
 }
 
+.answer-col.collapsed {
+  flex: 0.3;
+  min-width: 200px;
+}
+
+.answer-col.expanded {
+  flex: 0.7;
+}
+
 .answer-header {
   padding: 12px 16px;
   border-bottom: 1px solid var(--bg3);
@@ -424,6 +472,30 @@ defineExpose({
 .block-count {
   font-size: var(--font-xs);
   color: var(--grey1);
+}
+
+.preference-hint {
+  font-size: var(--font-xs);
+  color: var(--yellow);
+  padding: 2px 8px;
+  background: var(--bg-yellow);
+  border-radius: 4px;
+}
+
+.override-btn {
+  margin: 8px 16px 12px;
+  padding: 8px 14px;
+  background: var(--bg3);
+  color: var(--fg);
+  border: none;
+  border-radius: 4px;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.override-btn:hover {
+  background: var(--bg4);
 }
 
 .answer-content {
