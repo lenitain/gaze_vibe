@@ -132,6 +132,9 @@ class EyeTrackerProcessor:
             "timeOnB": eye_data.get("timeOnB", 0),
             "leftToRight": eye_data.get("leftToRight", 0),
             "rightToLeft": eye_data.get("rightToLeft", 0),
+            # 答案字符数，用于归一化
+            "answerALength": eye_data.get("answerALength", 1),
+            "answerBLength": eye_data.get("answerBLength", 1),
             # 从 EyeTracker.getAllMetrics() 传来的详细指标
             "gazeBias": eye_data.get("gazeBias", 0.5),
             "regressionRate": eye_data.get("regressionRate", 0),
@@ -164,7 +167,7 @@ class EyeTrackerProcessor:
         计算当前轮次的调整分数
 
         维度 1: 详细程度 (detail_score)
-        - gazeBias (0.5): 偏向详细解答
+        - gazeBias (0.5): 偏向详细解答 (按字符数归一化)
         - regressionRate (0.3): 高认知负荷 -> 降低详细度
         - switchFrequency (0.2): 频繁切换 -> 降低详细度
 
@@ -177,13 +180,39 @@ class EyeTrackerProcessor:
         thoughts.append("  [维度 1] 详细程度 (detail_score)")
 
         # gazeBias: 越偏向 A (详细) -> 分数越高
-        gaze_bias = metrics["gazeBias"]
-        thoughts.append(f"    gazeBias = {gaze_bias:.4f}")
+        # 按字符数归一化：timePerChar = time / length
+        time_on_a = metrics["timeOnA"]
+        time_on_b = metrics["timeOnB"]
+        len_a = max(1, metrics["answerALength"])  # 避免除零
+        len_b = max(1, metrics["answerBLength"])
+
+        time_per_char_a = time_on_a / len_a
+        time_per_char_b = time_on_b / len_b
+        total_time_per_char = time_per_char_a + time_per_char_b
+
+        if total_time_per_char > 0:
+            normalized_gaze_bias = time_per_char_a / total_time_per_char
+        else:
+            normalized_gaze_bias = 0.5
+
+        thoughts.append(f"    原始数据:")
+        thoughts.append(f"      timeOnA = {time_on_a}ms, answerALength = {len_a} 字符")
+        thoughts.append(f"      timeOnB = {time_on_b}ms, answerBLength = {len_b} 字符")
+        thoughts.append(f"    归一化计算:")
         thoughts.append(
-            f"      → 解释: 注视偏向 {'详细解答' if gaze_bias > 0.5 else '简洁解答'}"
+            f"      timePerCharA = {time_on_a} / {len_a} = {time_per_char_a:.4f} ms/char"
         )
         thoughts.append(
-            f"      → 权重贡献: {gaze_bias:.4f} × 0.5 = {gaze_bias * 0.5:.4f}"
+            f"      timePerCharB = {time_on_b} / {len_b} = {time_per_char_b:.4f} ms/char"
+        )
+        thoughts.append(
+            f"      normalizedGazeBias = {time_per_char_a:.4f} / ({time_per_char_a:.4f} + {time_per_char_b:.4f}) = {normalized_gaze_bias:.4f}"
+        )
+        thoughts.append(
+            f"      → 解释: 单位内容注视偏向 {'详细解答' if normalized_gaze_bias > 0.5 else '简洁解答'}"
+        )
+        thoughts.append(
+            f"      → 权重贡献: {normalized_gaze_bias:.4f} × 0.5 = {normalized_gaze_bias * 0.5:.4f}"
         )
 
         # regressionRate: 高认知负荷 -> 降低详细度
@@ -219,11 +248,13 @@ class EyeTrackerProcessor:
         )
 
         # 加权计算
-        detail_score = 0.5 * gaze_bias + 0.3 * regression_score + 0.2 * switch_score
+        detail_score = (
+            0.5 * normalized_gaze_bias + 0.3 * regression_score + 0.2 * switch_score
+        )
         thoughts.append(f"    ────────────────────────────")
         thoughts.append(f"    detail_score = {detail_score:.4f}")
         thoughts.append(
-            f"    (0.5 × {gaze_bias:.4f} + 0.3 × {regression_score:.4f} + 0.2 × {switch_score:.4f})"
+            f"    (0.5 × {normalized_gaze_bias:.4f} + 0.3 × {regression_score:.4f} + 0.2 × {switch_score:.4f})"
         )
 
         # ===== 维度 2: 解释 vs 代码 =====

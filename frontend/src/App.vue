@@ -23,6 +23,8 @@ const showFileExplorer = ref(true)
 const isLoading = ref(false)
 const answerA = ref('')
 const answerB = ref('')
+const answerALength = ref(0)
+const answerBLength = ref(0)
 const currentQuestion = ref('')
 const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
 const diffOpen = ref(false)
@@ -118,6 +120,9 @@ async function handleSubmit(prompt) {
         timeOnB: userPreference.value.timeOnB,
         leftToRight: userPreference.value.leftToRight,
         rightToLeft: userPreference.value.rightToLeft,
+        // 传递上一轮答案的字符数，用于后端归一化
+        answerALength: answerALength.value,
+        answerBLength: answerBLength.value,
         ...eyeTrackerRef.value.getAllMetrics()
       }
     }
@@ -138,6 +143,9 @@ async function handleSubmit(prompt) {
     const data = await response.json()
     answerA.value = data.answerA
     answerB.value = data.answerB
+    // 保存答案字符数，用于下一轮归一化
+    answerALength.value = data.answerA?.length || 0
+    answerBLength.value = data.answerB?.length || 0
 
     // 显示后端调整结果
     if (data.eyeProcessing && data.eyeProcessing.valid) {
