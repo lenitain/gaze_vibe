@@ -104,7 +104,7 @@ def ask():
         return jsonify({"error": "请输入问题"}), 400
 
     # preference 不再影响回答生成（仅用于实验数据记录）
-    result = generate_dual_answers(prompt, None, context_files)
+    result = generate_dual_answers(prompt, context_files)
     result["experimentMode"] = experiment_mode
     return jsonify(result)
 
