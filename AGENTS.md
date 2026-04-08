@@ -39,9 +39,7 @@ curl http://localhost:8000/api/health
 
 **Per-panel commits**: Left button commits `fileChangesA`, right button commits `fileChangesB`. Each file stores `_stagedBy` ('A' or 'B') to track which panel staged it. `handleChoice(side)` only writes files where `file._stagedBy === side`.
 
-**Right panel shows all blocks**: `codeBlocksB` displays `allResolvedBlocks` (from both A and B). Each block is tagged with `_panel: 'B'` so clicking them always stages to `fileChangesB`, regardless of `block.source`.
-
-**Deduplication**: `allResolvedBlocks` deduplicates by file path within each panel's resolution. Auto-assign post-processing gives unmatched blocks a project file by language, without dedup restriction.
+**Panel isolation**: `codeBlocksA` shows only source A blocks, `codeBlocksB` shows only source B blocks. Each panel has independent file path deduplication (`usedPathsMap` — one Set per source), so both panels can suggest different changes to the same file.
 
 **Content filtering**: `isFileApplicable()` rejects bash/shell commands, compiler output, error traces, and blocks under 2 lines.
 
@@ -51,6 +49,14 @@ curl http://localhost:8000/api/health
 3. Fuzzy filename matching
 4. First line of code block content (if it looks like a filename)
 5. Language-to-extension fallback against project files
+
+### Choice & Preference Submit
+
+`handleChoice(side)` fires API call and file writes **in parallel** — only `await apiPromise` blocks, file writes run in background. Users see "偏好已保存" immediately without waiting for file I/O.
+
+### Question Display
+
+`handleSubmit` stores the question in `currentQuestion`, displays it in a user bubble with a loading spinner. `answerPanelRef.resetChoice()` is called at the start of each submission to restore both panels.
 
 ### Eye Tracking
 
@@ -65,6 +71,7 @@ During DiffPreview: eye data is attributed to the side that opened the diff (`di
 - `file._stagedBy` — 'A' or 'B', determines which panel's commit writes this file
 - `block._panel` — forces a block's actions to target a specific panel's state
 - `commitAll(side)` only clears UI state; actual writes happen in `App.vue handleChoice()`
+- `resetChoice()` — resets `selectedSide`, `choiceDisabled`, and both `fileChanges` Maps; called on each new submission
 
 ## Code Style
 
