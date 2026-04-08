@@ -21,7 +21,7 @@ client = openai.OpenAI(
 )
 
 
-def generate_dual_answers(prompt, preference=None, context_files=None):
+def generate_dual_answers(prompt, context_files=None):
     """
     生成两个不同风格的答案
     - answerA: 详细解释风格
@@ -54,22 +54,6 @@ def generate_dual_answers(prompt, preference=None, context_files=None):
 
         system_a += context_text
         system_b += context_text
-
-    # 如果有用户偏好，调整回答策略
-    if preference:
-        if preference.get("finalChoice") == "A":
-            system_b += "\n注意：用户之前选择了详细解答，说明用户偏好详细解释风格。"
-        elif preference.get("finalChoice") == "B":
-            system_a += "\n注意：用户之前选择了简洁解答，说明用户偏好简洁直接的风格。"
-
-        # 根据阅读时间调整
-        time_a = preference.get("timeOnA", 0)
-        time_b = preference.get("timeOnB", 0)
-
-        if time_a > time_b * 1.5:
-            system_b += "\n注意：用户在详细解答上停留更久，可以适当增加一些解释。"
-        elif time_b > time_a * 1.5:
-            system_a += "\n注意：用户在简洁解答上停留更久，回答可以更精简。"
 
     try:
         # 生成详细答案
@@ -119,11 +103,8 @@ def ask():
     if not prompt:
         return jsonify({"error": "请输入问题"}), 400
 
-    # 对照组不使用偏好数据
-    if experiment_mode == "control":
-        preference = {}
-
-    result = generate_dual_answers(prompt, preference, context_files)
+    # preference 不再影响回答生成（仅用于实验数据记录）
+    result = generate_dual_answers(prompt, None, context_files)
     result["experimentMode"] = experiment_mode
     return jsonify(result)
 
