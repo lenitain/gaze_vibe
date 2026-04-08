@@ -12,3 +12,7 @@
 {"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 13477, "timeOnB": 1531, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T14:09:03.583451"}
 {"experimentMode": "treatment", "preference": {"finalChoice": "A", "timeOnA": 37630, "timeOnB": 1531, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T14:10:31.838895"}
 {"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 19465, "timeOnB": 1842, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T14:14:32.592130"}
+{"experimentMode": "full", "preference": {"finalChoice": "B", "timeOnA": 15981, "timeOnB": 327, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T14:49:11.451524"}
+{"experimentMode": "full", "preference": {"finalChoice": "B", "timeOnA": 54235, "timeOnB": 12660, "leftToRight": 8, "rightToLeft": 6}, "timestamp": "2026-04-08T14:52:25.482644"}
+{"experimentMode": "full", "preference": {"finalChoice": "A", "timeOnA": 54235, "timeOnB": 12660, "leftToRight": 8, "rightToLeft": 6}, "timestamp": "2026-04-08T14:52:36.327574"}
+{"experimentMode": "full", "preference": {"finalChoice": "B", "timeOnA": 54235, "timeOnB": 12660, "leftToRight": 8, "rightToLeft": 6}, "timestamp": "2026-04-08T14:52:43.475619"}
