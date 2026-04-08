@@ -105,10 +105,28 @@ async function handleSubmit(prompt) {
     const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
     const contextFiles = formatFilesForPrompt(relevantFiles)
 
+    // 收集眼动数据
+    let eyeData = null
+    if (eyeTrackerRef.value && isEyeTracking.value) {
+      // 停止当前追踪并获取数据
+      eyeTrackerRef.value.stopTracking()
+      isEyeTracking.value = false
+
+      // 获取详细眼动指标
+      eyeData = {
+        timeOnA: userPreference.value.timeOnA,
+        timeOnB: userPreference.value.timeOnB,
+        leftToRight: userPreference.value.leftToRight,
+        rightToLeft: userPreference.value.rightToLeft,
+        ...eyeTrackerRef.value.getAllMetrics()
+      }
+    }
+
     const requestBody = {
       prompt,
       contextFiles,
-      experimentMode: experimentMode.value
+      experimentMode: experimentMode.value,
+      eyeData  // 新增：发送眼动数据
     }
 
     const response = await fetch('/api/ask', {
@@ -121,16 +139,19 @@ async function handleSubmit(prompt) {
     answerA.value = data.answerA
     answerB.value = data.answerB
 
-    // 上一轮眼动数据参与置信度计算
-    updateConfidence(
-      userPreference.value.timeOnA,
-      userPreference.value.timeOnB,
-      null
-    )
+    // 显示后端调整结果
+    if (data.eyeProcessing && data.eyeProcessing.valid) {
+      console.log('眼动调整结果:', data.eyeProcessing)
+    }
+
+    // 重置眼动数据用于下一轮
     userPreference.value.timeOnA = 0
     userPreference.value.timeOnB = 0
+    userPreference.value.leftToRight = 0
+    userPreference.value.rightToLeft = 0
     decisionStartTime.value = Date.now()
     
+    // 启动新一轮追踪
     if (experimentMode.value === 'full' && eyeTrackerRef.value) {
       eyeTrackerRef.value.startTracking()
       isEyeTracking.value = true
@@ -150,9 +171,12 @@ async function handleChoice(side) {
 
   updateConfidence(0, 0, side)
   
-  if (experimentMode.value === 'full' && eyeTrackerRef.value) {
+  // 收集详细眼动指标
+  let eyeMetrics = null
+  if (eyeTrackerRef.value && isEyeTracking.value) {
     eyeTrackerRef.value.stopTracking()
     isEyeTracking.value = false
+    eyeMetrics = eyeTrackerRef.value.getAllMetrics()
   }
 
   const apiPromise = fetch('/api/preference', {
@@ -163,7 +187,8 @@ async function handleChoice(side) {
       experimentMode: experimentMode.value,
       emaBias: emaBias.value,
       confidence: confidence.value,
-      decisionTime
+      decisionTime,
+      eyeMetrics  // 新增：发送详细眼动指标
     })
   }).then(() => {
     choiceSaved.value = true
