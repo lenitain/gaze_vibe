@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const emit = defineEmits(['data', 'region-switch'])
 
@@ -20,6 +20,40 @@ const DEBOUNCE_THRESHOLD = 80
 let totalDurationA = 0
 let totalDurationB = 0
 let tau = ref(0)
+
+// 用于响应式更新的总时长
+let displayDuration = ref(0)
+let durationUpdateTimer = null
+
+// 格式化时长显示
+const formattedDuration = computed(() => {
+  const total = displayDuration.value
+  if (total >= 1000) {
+    return (total / 1000).toFixed(1) + 'k'
+  }
+  return total.toString()
+})
+
+// 启动时长更新定时器
+function startDurationUpdate() {
+  if (durationUpdateTimer) return
+  durationUpdateTimer = setInterval(() => {
+    if (isTracking.value && regionStartTime) {
+      const currentElapsed = Date.now() - regionStartTime
+      displayDuration.value = totalDurationA + totalDurationB + currentElapsed
+    } else {
+      displayDuration.value = totalDurationA + totalDurationB
+    }
+  }, 100) // 每 100ms 更新一次
+}
+
+// 停止时长更新定时器
+function stopDurationUpdate() {
+  if (durationUpdateTimer) {
+    clearInterval(durationUpdateTimer)
+    durationUpdateTimer = null
+  }
+}
 
 // 时间序列类指标
 let firstFixationRegion = ref(null)
@@ -47,16 +81,6 @@ let decisionLatency = ref(0)
 let explorationRatio = ref(0)
 let finalAttentionFocus = ref({ A: 0, B: 0 })
 let tauHistory = []
-
-let isCalibrating = ref(false)
-let calibrationPoints = []
-let calibrationIndex = ref(0)
-
-const CALIBRATION_LAYOUT = [
-  { x: 0.1, y: 0.1 }, { x: 0.5, y: 0.1 }, { x: 0.9, y: 0.1 },
-  { x: 0.1, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.9, y: 0.5 },
-  { x: 0.1, y: 0.9 }, { x: 0.5, y: 0.9 }, { x: 0.9, y: 0.9 },
-]
 
 async function initWebGazer() {
   if (typeof window.webgazer === 'undefined') {
@@ -342,6 +366,12 @@ async function startTracking() {
     finalAttentionFocus.value = { A: 0, B: 0 }
     tauHistory = []
 
+    // 重置显示时长
+    displayDuration.value = 0
+
+    // 启动时长更新定时器
+    startDurationUpdate()
+
     const videoEl = document.getElementById('webgazerVideoFeed')
     if (videoEl) videoEl.style.display = 'block'
 
@@ -355,10 +385,17 @@ async function startTracking() {
 }
 
 function stopTracking() {
+  // 停止时长更新定时器
+  stopDurationUpdate()
+
   if (webgazer) {
     flushRegion()
     lastFixationRegion.value = currentRegion.value
     decisionLatency.value = Date.now() - trackingStartTime
+
+    // 更新最终显示时长
+    displayDuration.value = totalDurationA + totalDurationB
+
     webgazer.pause()
     webgazer.showPredictionPoints(false)
     isTracking.value = false
@@ -408,53 +445,6 @@ function getAllMetrics() {
   }
 }
 
-function startCalibration() {
-  if (!webgazer) {
-    cameraError.value = 'WebGazer 未初始化'
-    return
-  }
-
-  if (!isTracking.value) {
-    startTracking().then(() => {
-      if (isTracking.value) beginCalibration()
-    })
-  } else {
-    beginCalibration()
-  }
-}
-
-function beginCalibration() {
-  isCalibrating.value = true
-  calibrationIndex.value = 0
-  calibrationPoints = CALIBRATION_LAYOUT.map(p => ({
-    x: Math.round(p.x * window.innerWidth),
-    y: Math.round(p.y * window.innerHeight),
-    clicks: 0
-  }))
-  webgazer.showPredictionPoints(true)
-}
-
-function handleCalibrationClick(point, index) {
-  if (index !== calibrationIndex.value) return
-  point.clicks++
-
-  webgazer.recordScreenPosition(point.x, point.y, 'click')
-  console.log(`校准点 ${index} 第 ${point.clicks} 次点击，坐标: (${point.x}, ${point.y})`)
-
-  if (point.clicks >= 3) {
-    calibrationIndex.value++
-    if (calibrationIndex.value >= calibrationPoints.length) {
-      finishCalibration()
-    }
-  }
-}
-
-function finishCalibration() {
-  isCalibrating.value = false
-  webgazer.showPredictionPoints(false)
-  console.log('校准完成，校准点数:', webgazer.getStoredPoints ? webgazer.getStoredPoints().length : '未知')
-}
-
 onMounted(() => {
   setTimeout(initWebGazer, 1000)
 })
@@ -476,14 +466,11 @@ onUnmounted(() => {
     const el = document.getElementById(id)
     if (el) el.remove()
   })
-  // 也清理可能残留的覆盖层
-  document.querySelectorAll('.calibration-overlay').forEach(el => el.remove())
 })
 
 defineExpose({
   startTracking,
   stopTracking,
-  startCalibration,
   isTracking,
   tau,
   getAllMetrics
@@ -496,35 +483,34 @@ defineExpose({
       {{ cameraError }}
       <button @click="startTracking" class="retry-btn">重试</button>
     </div>
-    <div v-else class="status" :class="{ active: isTracking, 'region-a': currentRegion === 'A', 'region-b': currentRegion === 'B' }">
-      <span class="dot"></span>
-      <span>{{ isTracking ? `追踪中 - ${currentRegion === 'A' ? '详细解答' : currentRegion === 'B' ? '简洁解答' : '...'}` : '等待启动' }}</span>
+    <div v-else class="tracker-display" :class="{ active: isTracking }">
+      <!-- 区域指示器 -->
+      <div class="region-indicator">
+        <div 
+          class="region-bar region-a" 
+          :class="{ active: currentRegion === 'A' }"
+          :style="{ opacity: currentRegion === 'A' ? 1 : 0.3 }"
+        ></div>
+        <div 
+          class="region-bar region-b" 
+          :class="{ active: currentRegion === 'B' }"
+          :style="{ opacity: currentRegion === 'B' ? 1 : 0.3 }"
+        ></div>
+      </div>
+      
+      <!-- 时长显示 -->
+      <div class="duration-display">
+        <span class="duration-value" :class="{ 'pulse': isTracking }">
+          {{ formattedDuration }}
+        </span>
+        <span class="duration-unit">ms</span>
+      </div>
+      
+      <!-- 状态文字 -->
+      <div class="status-text">
+        {{ isTracking ? (currentRegion === 'A' ? '详细' : currentRegion === 'B' ? '简洁' : '...') : '待机' }}
+      </div>
     </div>
-
-    <button
-      v-if="!isTracking && !cameraError"
-      @click="startCalibration"
-      class="calibrate-btn"
-    >
-      校准
-    </button>
-  </div>
-
-  <div v-if="isCalibrating" class="calibration-overlay">
-    <div
-      v-for="(point, index) in calibrationPoints"
-      :key="index"
-      class="calib-point"
-      :class="{
-        active: index === calibrationIndex,
-        done: index < calibrationIndex
-      }"
-      :style="{ left: point.x + 'px', top: point.y + 'px' }"
-      @click="handleCalibrationClick(point, index)"
-    >
-      <span v-if="index === calibrationIndex" class="click-hint">{{ point.clicks }}/3</span>
-    </div>
-    <div class="calib-tip">依次点击每个圆点（每个点 3 次）</div>
   </div>
 </template>
 
@@ -533,65 +519,109 @@ defineExpose({
   position: fixed;
   top: 20px;
   right: 20px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  background: var(--bg1);
-  border-radius: 20px;
   z-index: 100;
 }
 
-.status {
+.tracker-display {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: var(--font-sm);
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg1);
+  border-radius: 12px;
+  border: 1px solid var(--bg3);
+  transition: all 0.3s ease;
+}
+
+.tracker-display.active {
+  border-color: var(--blue);
+  box-shadow: 0 0 12px rgba(115, 162, 217, 0.2);
+}
+
+/* 区域指示器 */
+.region-indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.region-bar {
+  width: 24px;
+  height: 6px;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+}
+
+.region-bar.region-a {
+  background: var(--blue);
+}
+
+.region-bar.region-b {
+  background: var(--green);
+}
+
+.region-bar.active {
+  opacity: 1 !important;
+  box-shadow: 0 0 8px currentColor;
+  animation: bar-pulse 1s infinite;
+}
+
+@keyframes bar-pulse {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(1.2); }
+}
+
+/* 时长显示 */
+.duration-display {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.duration-value {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  font-family: 'Fira Code', monospace;
+  color: var(--fg);
+  min-width: 40px;
+  text-align: right;
+}
+
+.duration-value.pulse {
+  animation: value-pulse 0.5s infinite;
+}
+
+@keyframes value-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.duration-unit {
+  font-size: var(--font-xs);
   color: var(--grey1);
 }
 
-.status.active { color: var(--blue); }
-
-.status.region-a { color: var(--blue); }
-.status.region-b { color: var(--green); }
-
-.status.region-a .dot { background: var(--blue); animation: pulse 2s infinite; }
-.status.region-b .dot { background: var(--green); animation: pulse 2s infinite; }
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--bg3);
-}
-
-.status.active .dot {
-  background: var(--blue);
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.calibrate-btn {
-  padding: 8px 14px;
-  background: var(--bg3);
-  color: var(--fg);
-  border: none;
-  border-radius: 4px;
+/* 状态文字 */
+.status-text {
   font-size: var(--font-sm);
-  cursor: pointer;
-  transition: background 0.2s;
+  color: var(--grey1);
+  min-width: 28px;
+  text-align: center;
 }
 
-.calibrate-btn:hover { background: var(--bg4); }
+.tracker-display.active .status-text {
+  color: var(--fg);
+}
 
+/* 错误状态 */
 .error {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg1);
+  border-radius: 12px;
+  border: 1px solid var(--red);
   font-size: var(--font-sm);
   color: var(--red);
 }
@@ -601,62 +631,12 @@ defineExpose({
   background: var(--red);
   color: var(--bg0);
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   font-size: var(--font-xs);
   cursor: pointer;
 }
 
-.calibration-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  z-index: 300;
-}
-
-.calib-point {
-  position: absolute;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--bg3);
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-.calib-point.active {
-  background: var(--blue);
-  cursor: pointer;
-  pointer-events: auto;
-  animation: calib-pulse 1s infinite;
-}
-
-.calib-point.done {
-  background: var(--green);
-}
-
-@keyframes calib-pulse {
-  0%, 100% { transform: translate(-50%, -50%) scale(1); }
-  50% { transform: translate(-50%, -50%) scale(1.2); }
-}
-
-.click-hint {
-  font-size: var(--font-xs);
-  color: var(--bg0);
-  font-weight: bold;
-}
-
-.calib-tip {
-  position: fixed;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: var(--fg);
-  font-size: var(--font-base);
-  background: var(--bg1);
-  padding: 10px 20px;
-  border-radius: 6px;
+.retry-btn:hover {
+  opacity: 0.8;
 }
 </style>
