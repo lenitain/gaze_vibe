@@ -23,6 +23,7 @@ const showFileExplorer = ref(true)
 const isLoading = ref(false)
 const answerA = ref('')
 const answerB = ref('')
+const currentQuestion = ref('')
 const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
 const diffOpen = ref(false)
 const diffOpenSide = ref(null)
@@ -63,6 +64,7 @@ async function handleFolderSelect(dirHandle) {
 }
 
 async function handleSubmit(prompt) {
+  currentQuestion.value = prompt
   isLoading.value = true
 
   try {
@@ -264,10 +266,18 @@ function handleRegionSwitch({ from, to }) {
             class="file-viewer"
           />
 
-          <div v-if="!answerA && !answerB && !selectedFile" class="welcome">
+          <div v-if="!currentQuestion && !answerA && !answerB && !selectedFile" class="welcome">
             <h2>欢迎使用 GazeVibe</h2>
             <p>输入你的编程问题，获取双份不同风格的回答</p>
             <p class="hint">系统会通过眼动追踪分析你的阅读偏好，优化后续回答</p>
+          </div>
+
+          <div v-if="currentQuestion" class="user-message">
+            <div class="user-bubble">{{ currentQuestion }}</div>
+            <div v-if="isLoading" class="waiting-indicator">
+              <div class="spinner"></div>
+              <span>AI 思考中...</span>
+            </div>
           </div>
 
           <AnswerPanel
@@ -473,6 +483,47 @@ function handleRegionSwitch({ from, to }) {
   border-radius: 8px;
   font-size: var(--font-base);
   color: var(--aqua);
+}
+
+.user-message {
+  padding: 8px 0;
+}
+
+.user-bubble {
+  display: inline-block;
+  max-width: 80%;
+  padding: 12px 18px;
+  background: var(--bg-blue);
+  border: 1px solid var(--blue);
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
+  color: var(--fg);
+  font-size: var(--font-base);
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.waiting-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-left: 4px;
+  color: var(--grey1);
+  font-size: var(--font-sm);
+}
+
+.waiting-indicator .spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--bg3);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .toast {
