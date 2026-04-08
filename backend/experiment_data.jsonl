@@ -5,3 +5,7 @@
 {"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 15253, "timeOnB": 639, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T13:32:54.055079"}
 {"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 26228, "timeOnB": 353, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T13:38:03.422800"}
 {"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 26050, "timeOnB": 11074, "leftToRight": 4, "rightToLeft": 3}, "timestamp": "2026-04-08T13:48:34.325313"}
+{"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 20642, "timeOnB": 3391, "leftToRight": 2, "rightToLeft": 1}, "timestamp": "2026-04-08T13:52:22.757738"}
+{"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 23742, "timeOnB": 3892, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T13:57:36.193848"}
+{"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 42742, "timeOnB": 4759, "leftToRight": 3, "rightToLeft": 1}, "timestamp": "2026-04-08T13:58:59.731487"}
+{"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 47764, "timeOnB": 4759, "leftToRight": 3, "rightToLeft": 1}, "timestamp": "2026-04-08T13:59:50.110639"}
