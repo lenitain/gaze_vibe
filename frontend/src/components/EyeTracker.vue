@@ -1,5 +1,16 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+
+const props = defineProps({
+  diffOpen: {
+    type: Boolean,
+    default: false
+  },
+  diffOpenSide: {
+    type: String,
+    default: null
+  }
+})
 
 const emit = defineEmits(['data', 'region-switch'])
 
@@ -25,6 +36,14 @@ let tau = ref(0)
 let displayDuration = ref(0)
 let durationUpdateTimer = null
 
+// 当前显示的区域（考虑 diff 状态）
+const displayRegion = computed(() => {
+  if (props.diffOpen && props.diffOpenSide) {
+    return props.diffOpenSide
+  }
+  return currentRegion.value
+})
+
 // 格式化时长显示
 const formattedDuration = computed(() => {
   const total = displayDuration.value
@@ -40,7 +59,16 @@ function startDurationUpdate() {
   durationUpdateTimer = setInterval(() => {
     if (isTracking.value && regionStartTime) {
       const currentElapsed = Date.now() - regionStartTime
-      displayDuration.value = totalDurationA + totalDurationB + currentElapsed
+      // 当 diff 打开时，显示 diffOpenSide 对应的时长
+      if (props.diffOpen && props.diffOpenSide) {
+        if (props.diffOpenSide === 'A') {
+          displayDuration.value = totalDurationA + currentElapsed + totalDurationB
+        } else {
+          displayDuration.value = totalDurationA + totalDurationB + currentElapsed
+        }
+      } else {
+        displayDuration.value = totalDurationA + totalDurationB + currentElapsed
+      }
     } else {
       displayDuration.value = totalDurationA + totalDurationB
     }
@@ -111,6 +139,23 @@ function getRegion(x) {
 }
 
 function flushRegion() {
+  // 当 diff 打开时，数据归到 diffOpenSide
+  if (props.diffOpen && props.diffOpenSide) {
+    if (regionStartTime) {
+      const duration = Date.now() - regionStartTime
+      if (duration > 0) {
+        if (props.diffOpenSide === 'A') {
+          totalDurationA += duration
+        } else {
+          totalDurationB += duration
+        }
+        emit('data', { region: props.diffOpenSide, duration })
+      }
+    }
+    regionStartTime = null
+    return
+  }
+
   if (currentRegion.value && regionStartTime) {
     const duration = Date.now() - regionStartTime
     if (duration > 0) {
@@ -272,6 +317,10 @@ async function startTracking() {
       webgazer.setGazeListener((data) => {
         if (!data) return
         gazeCount.value++
+
+        // 当 diff 打开时，不进行区域判断，直接返回
+        // 数据会在 flushRegion 时归到 diffOpenSide
+        if (props.diffOpen) return
 
         const region = getRegion(data.x)
 
@@ -488,13 +537,13 @@ defineExpose({
       <div class="region-indicator">
         <div 
           class="region-bar region-a" 
-          :class="{ active: currentRegion === 'A' }"
-          :style="{ opacity: currentRegion === 'A' ? 1 : 0.3 }"
+          :class="{ active: displayRegion === 'A' }"
+          :style="{ opacity: displayRegion === 'A' ? 1 : 0.3 }"
         ></div>
         <div 
           class="region-bar region-b" 
-          :class="{ active: currentRegion === 'B' }"
-          :style="{ opacity: currentRegion === 'B' ? 1 : 0.3 }"
+          :class="{ active: displayRegion === 'B' }"
+          :style="{ opacity: displayRegion === 'B' ? 1 : 0.3 }"
         ></div>
       </div>
       
@@ -508,7 +557,7 @@ defineExpose({
       
       <!-- 状态文字 -->
       <div class="status-text">
-        {{ isTracking ? (currentRegion === 'A' ? '详细' : currentRegion === 'B' ? '简洁' : '...') : '待机' }}
+        {{ isTracking ? (displayRegion === 'A' ? '详细' : displayRegion === 'B' ? '简洁' : '...') : '待机' }}
       </div>
     </div>
   </div>

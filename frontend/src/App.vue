@@ -382,6 +382,8 @@ function handleRegionSwitch({ from, to }) {
     <EyeTracker 
       v-show="isTreatment"
       ref="eyeTrackerRef"
+      :diff-open="diffOpen"
+      :diff-open-side="diffOpenSide"
       @data="handleEyeData"
       @region-switch="handleRegionSwitch"
     />
