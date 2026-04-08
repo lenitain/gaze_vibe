@@ -338,7 +338,7 @@ class EyeTrackerProcessor:
             "detail_score": detail_score,
             "explanation_score": explanation_score,
             "components": {
-                "gaze_bias": gaze_bias,
+                "gaze_bias": normalized_gaze_bias,
                 "regression_score": regression_score,
                 "switch_score": switch_score,
                 "final_focus_ratio": final_focus_ratio,

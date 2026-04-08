@@ -72,13 +72,25 @@ const experimentMode = ref('full')
 const isTreatment = computed(() => experimentMode.value !== 'control')
 
 function toggleMode() {
-  const idx = experimentModes.indexOf(experimentMode.value)
+  const prevMode = experimentMode.value
+  const idx = experimentModes.indexOf(prevMode)
   experimentMode.value = experimentModes[(idx + 1) % experimentModes.length]
 
-  // 切换到对照组时停止眼动追踪
-  if (experimentMode.value === 'control' && eyeTrackerRef.value) {
+  // 切换模式时重置前后端建模状态，防止跨模式干扰
+  emaBias.value = 0.5
+  roundCount.value = 0
+  fetch('/api/eye-model/reset', { method: 'POST' }).catch(() => {})
+
+  // 停止当前追踪
+  if (eyeTrackerRef.value) {
     eyeTrackerRef.value.stopTracking()
     isEyeTracking.value = false
+  }
+
+  // 非对照组启动追踪
+  if (experimentMode.value !== 'control' && eyeTrackerRef.value) {
+    eyeTrackerRef.value.startTracking()
+    isEyeTracking.value = true
   }
 }
 
@@ -159,8 +171,8 @@ async function handleSubmit(prompt) {
     userPreference.value.rightToLeft = 0
     decisionStartTime.value = Date.now()
     
-    // 启动新一轮追踪
-    if (experimentMode.value === 'full' && eyeTrackerRef.value) {
+    // 启动新一轮追踪（对照组除外）
+    if (experimentMode.value !== 'control' && eyeTrackerRef.value) {
       eyeTrackerRef.value.startTracking()
       isEyeTracking.value = true
     }
