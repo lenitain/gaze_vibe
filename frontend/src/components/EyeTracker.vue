@@ -462,6 +462,22 @@ onMounted(() => {
 onUnmounted(() => {
   stopTracking()
   if (webgazer) webgazer.end()
+
+  // WebGazer 在 body 上创建的固定定位元素可能残留，强制清理
+  const ids = [
+    'webgazerVideoFeed',
+    'webgazerVideoContainer',
+    'webgazerFaceFeedbackBox',
+    'webgazerFaceOverlay',
+    'webgazerGazeDot',
+    'webgazerCanvas',
+  ]
+  ids.forEach(id => {
+    const el = document.getElementById(id)
+    if (el) el.remove()
+  })
+  // 也清理可能残留的覆盖层
+  document.querySelectorAll('.calibration-overlay').forEach(el => el.remove())
 })
 
 defineExpose({

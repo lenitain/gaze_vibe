@@ -72,6 +72,12 @@ const isTreatment = computed(() => experimentMode.value !== 'control')
 function toggleMode() {
   const idx = experimentModes.indexOf(experimentMode.value)
   experimentMode.value = experimentModes[(idx + 1) % experimentModes.length]
+
+  // 切换到对照组时停止眼动追踪
+  if (experimentMode.value === 'control' && eyeTrackerRef.value) {
+    eyeTrackerRef.value.stopTracking()
+    isEyeTracking.value = false
+  }
 }
 
 function handleFileSelect(file) {
@@ -349,7 +355,7 @@ function handleRegionSwitch({ from, to }) {
     </main>
 
     <EyeTracker 
-      v-if="isTreatment"
+      v-show="isTreatment"
       ref="eyeTrackerRef"
       @data="handleEyeData"
       @region-switch="handleRegionSwitch"
