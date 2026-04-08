@@ -106,50 +106,50 @@ async function handleSubmit(prompt) {
 async function handleChoice(side) {
   userPreference.value.finalChoice = side
   
-  // 只有实验组才停止眼动追踪
   if (experimentMode.value === 'treatment' && eyeTrackerRef.value) {
     eyeTrackerRef.value.stopTracking()
     isEyeTracking.value = false
   }
 
-  let savedCount = 0
-  for (const file of indexedFiles.value) {
-    if (file._originalContent && file._stagedBy === side) {
-      try {
-        await fileIndexer.writeFile(file.path, file.content)
-        delete file._originalContent
-        delete file._stagedBy
-        savedCount++
-      } catch (err) {
-        console.error(`写入文件失败: ${file.path}`, err)
-      }
-    }
-  }
-
-  if (savedCount > 0) {
-    savedToast.value = `已保存 ${savedCount} 个文件的修改`
-    setTimeout(() => { savedToast.value = '' }, 3000)
-  }
-
-  if (answerPanelRef.value) {
-    answerPanelRef.value.commitAll(side)
-  }
-
-  // 对照组也发送偏好数据（但不包含眼动数据）
-  try {
-    await fetch('/api/preference', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        preference: userPreference.value,
-        experimentMode: experimentMode.value
-      })
+  const apiPromise = fetch('/api/preference', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      preference: userPreference.value,
+      experimentMode: experimentMode.value
     })
+  }).then(() => {
     choiceSaved.value = true
     setTimeout(() => { choiceSaved.value = false }, 3000)
-  } catch (err) {
+  }).catch(err => {
     console.error('Save preference failed:', err)
-  }
+  })
+
+  const writePromise = (async () => {
+    let savedCount = 0
+    for (const file of indexedFiles.value) {
+      if (file._originalContent && file._stagedBy === side) {
+        try {
+          await fileIndexer.writeFile(file.path, file.content)
+          delete file._originalContent
+          delete file._stagedBy
+          savedCount++
+        } catch (err) {
+          console.error(`写入文件失败: ${file.path}`, err)
+        }
+      }
+    }
+    if (savedCount > 0) {
+      savedToast.value = `已保存 ${savedCount} 个文件的修改`
+      setTimeout(() => { savedToast.value = '' }, 3000)
+    }
+    if (answerPanelRef.value) {
+      answerPanelRef.value.commitAll(side)
+    }
+  })()
+
+  await apiPromise
+  writePromise
 }
 
 async function handleApplyChange({ filePath, content, source }) {
