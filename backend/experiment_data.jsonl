@@ -4,3 +4,4 @@
 {"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 39281, "timeOnB": 15580, "leftToRight": 4, "rightToLeft": 2}, "timestamp": "2026-04-08T13:29:09.677720"}
 {"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 15253, "timeOnB": 639, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T13:32:54.055079"}
 {"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 26228, "timeOnB": 353, "leftToRight": 1, "rightToLeft": 0}, "timestamp": "2026-04-08T13:38:03.422800"}
+{"experimentMode": "treatment", "preference": {"finalChoice": "B", "timeOnA": 26050, "timeOnB": 11074, "leftToRight": 4, "rightToLeft": 3}, "timestamp": "2026-04-08T13:48:34.325313"}
