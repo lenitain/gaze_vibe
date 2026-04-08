@@ -1,109 +1,94 @@
 # GazeVibe
 
-基于眼动追踪和注意力机制的 AI 编程助手原型。
-
-## 项目简介
-
-模拟"豆包风格的双答案模式"：同一个问题生成两份不同风格的回答（详细 vs 简洁），通过眼动追踪捕捉用户阅读差异，基于阅读偏好优化后续回答。
+眼动追踪 AI 编程助手。同一个问题生成两份不同风格的回答（详细 vs 简洁），通过眼动追踪捕捉用户阅读偏好，基于偏好优化后续回答。
 
 ## 技术栈
 
-- **前端**: Vue 3 + Vite + WebGazer.js
-- **后端**: Python Flask + OpenAI API
-- **眼动追踪**: WebGazer.js (摄像头基础，4象限精度)
+- **前端**: Vue 3 + Vite (bun)
+- **后端**: Python Flask + DeepSeek API
+- **眼动追踪**: WebGazer.js (摄像头基础，2 区域精度)
 
 ## 快速开始
 
-### 1. 安装后端依赖
-
 ```bash
-cd backend
-pip install -r requirements.txt
+# 前端
+cd frontend && bun install && bun run dev   # http://localhost:5173
+
+# 后端（使用已有 venv）
+backend/.venv/bin/python backend/app.py      # http://localhost:8000
+# 或: cd backend && bash run.sh
+
+# 健康检查
+curl http://localhost:8000/api/health
 ```
 
-### 2. 配置 OpenAI API Key
+后端没有 `pip`，请直接使用 venv 或 `uv`。
 
-```bash
-# 方式1: 环境变量
-export OPENAI_API_KEY="your-api-key"
-
-# 方式2: 直接修改 app.py 中的 api_key
-```
-
-### 3. 启动后端
-
-```bash
-cd backend
-python app.py
-```
-
-后端将在 http://localhost:8000 启动
-
-### 4. 启动前端
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-前端将在 http://localhost:5173 启动
-
-### 5. 使用
-
-1. 打开浏览器访问 http://localhost:5173
-2. 允许摄像头权限（用于眼动追踪）
-3. 输入编程问题
-4. 系统生成两个答案（详细/简洁）
-5. 阅读时，眼动追踪自动记录阅读偏好
-6. 选择一个答案，系统记录偏好用于优化下次回答
+API Key 配置在 `backend/.env`（`DEEPSEEK_API_KEY`），已从 git 排除。
 
 ## 目录结构
 
 ```
 gaze-vibe/
-├── frontend/          # Vue 前端
+├── frontend/
 │   ├── src/
+│   │   ├── App.vue                      # 根组件，状态管理
+│   │   ├── main.js
 │   │   ├── components/
-│   │   │   ├── AnswerPanel.vue    # 双答案面板
-│   │   │   ├── EyeTracker.vue    # 眼动追踪组件
-│   │   │   └── ChatInput.vue     # 输入框
-│   │   ├── App.vue
-│   │   └── main.js
+│   │   │   ├── AnswerPanel.vue          # 双答案面板 + 代码暂存
+│   │   │   ├── ChatInput.vue            # 输入框
+│   │   │   ├── DiffPreview.vue          # 修改预览弹窗
+│   │   │   ├── EyeTracker.vue           # WebGazer 眼动追踪
+│   │   │   ├── FolderSelector.vue       # 文件夹选择器
+│   │   │   ├── FileTree.vue             # 侧边栏文件树
+│   │   │   ├── FileTreeNode.vue         # 文件树节点
+│   │   │   └── FileViewer.vue           # 文件内容查看器
+│   │   ├── utils/
+│   │   │   ├── codeParser.js            # 代码块解析、文件路径提取、diff
+│   │   │   ├── fileIndexer.js           # File System Access API 目录扫描
+│   │   │   └── fileSelector.js          # 关键词匹配选取相关文件
+│   │   └── styles/
+│   │       └── everforest.css           # Everforest 主题变量
 │   └── index.html
-├── backend/           # Python 后端
-│   ├── app.py
+├── backend/
+│   ├── app.py                           # Flask 服务，DeepSeek API 调用
+│   ├── .env                             # DEEPSEEK_API_KEY
+│   ├── run.sh                           # 一键启动脚本
 │   └── requirements.txt
 └── README.md
 ```
 
-## 核心功能
+## 核心流程
+
+### 双答案生成
+
+后端对同一问题发起两次 DeepSeek API 调用，使用不同的 system prompt：
+
+- **Answer A** — 详细导师风格：分析问题，给出完整代码和解释
+- **Answer B** — 简洁助手风格：简短说明，只给修改后的代码
+
+### 代码应用工作流
+
+1. `codeParser.js` 从 AI 回答中解析代码块，`extractFilePath` 匹配到项目文件
+2. 匹配到文件的代码块显示「暂存修改」按钮；未匹配的仅展示代码预览
+3. 点击「暂存修改」→ DiffPreview 弹窗 → 点击「应用修改」暂存 → 按钮变为红色「已暂存 (取消)」
+4. 点击「选择此答案」→ 将该面板暂存的文件写入磁盘
+
+每个面板独立管理暂存状态：`fileChangesA` / `fileChangesB`。文件通过 `_stagedBy` 标记来源（A 或 B），`handleChoice(side)` 只写入对应面板暂存的文件。
 
 ### 眼动追踪
 
-- 使用 WebGazer.js 进行浏览器端眼动追踪
-- 4象限精度：区分左右两个答案区域
-- 记录指标：
-  - 首次注视区域
-  - 各区域停留时长
-  - 切换次数
+WebGazer 初始化一次，每个会话 `resume()` / `pause()`。追踪指标：
 
-### 偏好学习
+- 各区域（详细/简洁）停留时长
+- 左右切换次数
 
-- 根据用户选择的答案调整下次回答风格
-- 根据阅读时长比例微调回答详细程度
+DiffPreview 打开期间，眼动数据归属到打开 diff 的对应面板。
 
-## 注意事项
+## 浏览器兼容性
 
-1. 眼动追踪需要摄像头权限
-2. 首次使用建议进行校准以提高精度
-3. 需要稳定的网络连接以调用 OpenAI API
-4. 当前版本为原型，仅支持 OpenAI API
+File System Access API（`window.showDirectoryPicker`）需要 Chrome 86+。
 
-## 后续优化方向
+## 主题
 
-- [ ] 支持 Claude API
-- [ ] 支持本地 LLM (Ollama)
-- [ ] 改进眼动追踪精度
-- [ ] 增加 opencode 集成实现文件修改
-- [ ] 增加用户实验数据收集功能
+Everforest Dark Medium。字体大小 1.5x 缩放（`--font-xs` = 18px）。颜色变量见 `src/styles/everforest.css`。
