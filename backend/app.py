@@ -256,6 +256,19 @@ def save_preference():
     except Exception as e:
         print(f"保存实验数据失败: {e}")
 
+    # 处理眼动数据 (6步处理)
+    if eye_metrics:
+        # 合并 preference 中的时间数据到眼动指标
+        eye_data_for_process = {
+            "timeOnA": preference.get("timeOnA", 0),
+            "timeOnB": preference.get("timeOnB", 0),
+            "leftToRight": preference.get("leftToRight", 0),
+            "rightToLeft": preference.get("rightToLeft", 0),
+            **eye_metrics,
+        }
+        eye_result = eye_processor.process(eye_data_for_process)
+        print_thoughts(eye_result["thoughts"])
+
     # 打印偏好数据摘要
     print("\n" + "─" * 60)
     print("  用户偏好数据")
