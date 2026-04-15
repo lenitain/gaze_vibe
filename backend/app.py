@@ -238,13 +238,38 @@ def save_preference():
     preference = data.get("preference", {})
     experiment_mode = data.get("experimentMode", "full")
     eye_metrics = data.get("eyeMetrics")  # 新增：详细眼动指标
+    answer_a_length = data.get("answerALength", 0)
+    answer_b_length = data.get("answerBLength", 0)
 
-    # 记录实验数据
+    # 先处理眼动数据 (6步处理)，再保存（确保adjustments是最新的）
+    processed_scores = None
+    if eye_metrics:
+        # 合并 preference 中的时间数据到眼动指标
+        eye_data_for_process = {
+            "timeOnA": preference.get("timeOnA", 0),
+            "timeOnB": preference.get("timeOnB", 0),
+            "leftToRight": preference.get("leftToRight", 0),
+            "rightToLeft": preference.get("rightToLeft", 0),
+            "answerALength": answer_a_length,
+            "answerBLength": answer_b_length,
+            **eye_metrics,
+        }
+        eye_result = eye_processor.process(eye_data_for_process)
+        print_thoughts(eye_result["thoughts"])
+
+        # 提取处理后的中间指标
+        if eye_result.get("valid"):
+            processed_scores = eye_result.get("current_scores", {})
+
+    # 记录实验数据（在处理之后，确保adjustments是最新的）
     experiment_data = {
         "experimentMode": experiment_mode,
         "preference": preference,
         "eyeMetrics": eye_metrics,
+        "answerALength": answer_a_length,
+        "answerBLength": answer_b_length,
         "adjustments": eye_processor.get_prompt_adjustments(),
+        "processedScores": processed_scores,
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -255,19 +280,6 @@ def save_preference():
             f.write(json.dumps(experiment_data, ensure_ascii=False) + "\n")
     except Exception as e:
         print(f"保存实验数据失败: {e}")
-
-    # 处理眼动数据 (6步处理)
-    if eye_metrics:
-        # 合并 preference 中的时间数据到眼动指标
-        eye_data_for_process = {
-            "timeOnA": preference.get("timeOnA", 0),
-            "timeOnB": preference.get("timeOnB", 0),
-            "leftToRight": preference.get("leftToRight", 0),
-            "rightToLeft": preference.get("rightToLeft", 0),
-            **eye_metrics,
-        }
-        eye_result = eye_processor.process(eye_data_for_process)
-        print_thoughts(eye_result["thoughts"])
 
     # 打印偏好数据摘要
     print("\n" + "─" * 60)

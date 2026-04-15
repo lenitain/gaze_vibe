@@ -208,7 +208,9 @@ async function handleChoice(side) {
       emaBias: emaBias.value,
       confidence: confidence.value,
       decisionTime,
-      eyeMetrics  // 新增：发送详细眼动指标
+      eyeMetrics,  // 新增：发送详细眼动指标
+      answerALength: answerALength.value,
+      answerBLength: answerBLength.value
     })
   }).then(() => {
     choiceSaved.value = true
