@@ -30,10 +30,6 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-# 设置中文字体
-plt.rcParams["font.sans-serif"] = ["SimHei", "DejaVu Sans"]
-plt.rcParams["axes.unicode_minus"] = False
-
 
 class ExperimentAnalyzer:
     """实验数据分析器"""
@@ -271,9 +267,9 @@ class ExperimentAnalyzer:
         self._plot_dimension1(eye_df)
 
     def _plot_dimension1(self, eye_df):
-        """维度1可视化"""
+        """Dimension 1 visualization"""
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-        fig.suptitle("维度1：眼动指标有效性验证", fontsize=14)
+        fig.suptitle("Dimension 1: Eye Tracking Metrics Effectiveness", fontsize=14)
 
         ax = axes[0, 0]
         valid = eye_df.dropna(subset=["finalChoice"])
@@ -284,16 +280,16 @@ class ExperimentAnalyzer:
             ax.scatter(valid["time_diff"], valid["choice_numeric"], alpha=0.6)
             ax.set_xlabel("timeOnA - timeOnB (ms)")
             ax.set_ylabel("finalChoice (A=1, B=0)")
-            ax.set_title("时间差异 vs 选择")
+            ax.set_title("Time Difference vs Choice")
             ax.axhline(y=0.5, color="r", linestyle="--", alpha=0.5)
 
         ax = axes[0, 1]
         a_data = eye_df[eye_df["finalChoice"] == "A"]["timeOnA"].dropna()
         b_data = eye_df[eye_df["finalChoice"] == "B"]["timeOnA"].dropna()
         if len(a_data) > 0 and len(b_data) > 0:
-            ax.boxplot([a_data, b_data], labels=["选择A", "选择B"])
+            ax.boxplot([a_data, b_data], labels=["Choice A", "Choice B"])
             ax.set_ylabel("timeOnA (ms)")
-            ax.set_title("timeOnA 分布（按选择分组）")
+            ax.set_title("timeOnA Distribution by Choice")
 
         ax = axes[1, 0]
         corr_cols = ["saccadeCount", "gazeBias", "regressionRate", "decisionLatency"]
@@ -301,7 +297,7 @@ class ExperimentAnalyzer:
         if len(corr_data) > 2:
             corr_matrix = corr_data.corr()
             sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", center=0, ax=ax)
-            ax.set_title("眼动指标相关性热力图")
+            ax.set_title("Eye Metrics Correlation Heatmap")
 
         ax = axes[1, 1]
         reg_a = eye_df[eye_df["finalChoice"] == "A"]["regressionRate"].dropna()
@@ -309,14 +305,14 @@ class ExperimentAnalyzer:
         if len(reg_a) > 0 and len(reg_b) > 0:
             ax.violinplot([reg_a, reg_b], positions=[1, 2])
             ax.set_xticks([1, 2])
-            ax.set_xticklabels(["选择A", "选择B"])
+            ax.set_xticklabels(["Choice A", "Choice B"])
             ax.set_ylabel("regressionRate")
-            ax.set_title("回视率分布（按选择分组）")
+            ax.set_title("Regression Rate Distribution by Choice")
 
         plt.tight_layout()
         plt.savefig(self.figures_dir / "dimension1_eye_effectiveness.png", dpi=150)
         plt.close()
-        print(f"  图表已保存: {self.figures_dir / 'dimension1_eye_effectiveness.png'}")
+        print(f"  Chart saved: {self.figures_dir / 'dimension1_eye_effectiveness.png'}")
         print()
 
     def analyze_dimension2_normalization(self):
@@ -384,19 +380,19 @@ class ExperimentAnalyzer:
         self._plot_dimension2(valid_df)
 
     def _plot_dimension2(self, valid_df):
-        """维度2可视化"""
+        """Dimension 2 visualization"""
         fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-        fig.suptitle("维度2：归一化算法有效性验证", fontsize=14)
+        fig.suptitle("Dimension 2: Normalization Algorithm Effectiveness", fontsize=14)
 
         ax = axes[0]
         if len(valid_df) > 0:
             valid_df["diff_group"] = pd.cut(
                 valid_df["lengthDiff"],
                 bins=[0, 0.5, 1, float("inf")],
-                labels=["小", "中", "大"],
+                labels=["Small", "Medium", "Large"],
             )
             groups, labels = [], []
-            for name in ["小", "中", "大"]:
+            for name in ["Small", "Medium", "Large"]:
                 g = valid_df[valid_df["diff_group"] == name]
                 if len(g) > 0:
                     groups.append(
@@ -406,13 +402,13 @@ class ExperimentAnalyzer:
             if groups:
                 x = np.arange(len(groups))
                 width = 0.35
-                ax.bar(x - width / 2, [g[0] for g in groups], width, label="原始")
-                ax.bar(x + width / 2, [g[1] for g in groups], width, label="归一化")
+                ax.bar(x - width / 2, [g[0] for g in groups], width, label="Original")
+                ax.bar(x + width / 2, [g[1] for g in groups], width, label="Normalized")
                 ax.set_xticks(x)
                 ax.set_xticklabels(labels)
-                ax.set_xlabel("长度差异程度")
+                ax.set_xlabel("Length Difference Level")
                 ax.set_ylabel("gazeBias")
-                ax.set_title("原始 vs 归一化（按长度差异分组）")
+                ax.set_title("Original vs Normalized (by Length Difference)")
                 ax.legend()
 
         ax = axes[1]
@@ -420,14 +416,14 @@ class ExperimentAnalyzer:
             diff = valid_df["gazeBias"] - valid_df["normalizedGazeBias"]
             ax.hist(diff.dropna(), bins=20, edgecolor="black")
             ax.axvline(x=0, color="r", linestyle="--")
-            ax.set_xlabel("原始 - 归一化")
-            ax.set_ylabel("频数")
-            ax.set_title("归一化前后偏差分布")
+            ax.set_xlabel("Original - Normalized")
+            ax.set_ylabel("Frequency")
+            ax.set_title("Normalization Deviation Distribution")
 
         plt.tight_layout()
         plt.savefig(self.figures_dir / "dimension2_normalization.png", dpi=150)
         plt.close()
-        print(f"  图表已保存: {self.figures_dir / 'dimension2_normalization.png'}")
+        print(f"  Chart saved: {self.figures_dir / 'dimension2_normalization.png'}")
         print()
 
     def analyze_dimension3_prediction(self):
@@ -520,17 +516,17 @@ class ExperimentAnalyzer:
         self._plot_dimension4(valid_df)
 
     def _plot_dimension4(self, valid_df):
-        """维度4可视化"""
+        """Dimension 4 visualization"""
         fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-        fig.suptitle("维度4：EMA收敛性分析", fontsize=14)
+        fig.suptitle("Dimension 4: EMA Convergence Analysis", fontsize=14)
 
         ax = axes[0]
         if len(valid_df) > 0:
             ax.plot(valid_df["detail_score"].values, marker="o", label="detail_score")
-            ax.axhline(y=0.5, color="r", linestyle="--", alpha=0.5, label="基准线")
-            ax.set_xlabel("轮次")
-            ax.set_ylabel("score")
-            ax.set_title("detail_score 学习曲线")
+            ax.axhline(y=0.5, color="r", linestyle="--", alpha=0.5, label="Baseline")
+            ax.set_xlabel("Round")
+            ax.set_ylabel("Score")
+            ax.set_title("detail_score Learning Curve")
             ax.legend()
 
         ax = axes[1]
@@ -540,16 +536,16 @@ class ExperimentAnalyzer:
                 marker="o",
                 label="explanation_score",
             )
-            ax.axhline(y=0.5, color="r", linestyle="--", alpha=0.5, label="基准线")
-            ax.set_xlabel("轮次")
-            ax.set_ylabel("score")
-            ax.set_title("explanation_score 学习曲线")
+            ax.axhline(y=0.5, color="r", linestyle="--", alpha=0.5, label="Baseline")
+            ax.set_xlabel("Round")
+            ax.set_ylabel("Score")
+            ax.set_title("explanation_score Learning Curve")
             ax.legend()
 
         plt.tight_layout()
         plt.savefig(self.figures_dir / "dimension4_ema_convergence.png", dpi=150)
         plt.close()
-        print(f"  图表已保存: {self.figures_dir / 'dimension4_ema_convergence.png'}")
+        print(f"  Chart saved: {self.figures_dir / 'dimension4_ema_convergence.png'}")
         print()
 
     def analyze_dimension6_mode_comparison(self):
@@ -605,16 +601,16 @@ class ExperimentAnalyzer:
         self._plot_dimension6()
 
     def _plot_dimension6(self):
-        """维度6可视化"""
+        """Dimension 6 visualization"""
         fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-        fig.suptitle("维度6：模式对比分析", fontsize=14)
+        fig.suptitle("Dimension 6: Mode Comparison Analysis", fontsize=14)
 
         ax = axes[0]
         mode_groups = self.df.groupby("experimentMode")["totalTime"].mean()
         if len(mode_groups) > 0:
             mode_groups.plot(kind="bar", ax=ax)
-            ax.set_ylabel("平均决策时间 (ms)")
-            ax.set_title("各模式平均决策时间")
+            ax.set_ylabel("Avg Decision Time (ms)")
+            ax.set_title("Avg Decision Time by Mode")
             ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
 
         ax = axes[1]
@@ -625,14 +621,14 @@ class ExperimentAnalyzer:
             rates.append((mode_df["finalChoice"] == "A").mean())
         if rates:
             ax.bar(modes, rates)
-            ax.set_ylabel("A选择比例")
-            ax.set_title("各模式A选择比例")
+            ax.set_ylabel("Choice A Rate")
+            ax.set_title("Choice A Rate by Mode")
             ax.set_xticklabels(modes, rotation=0)
 
         plt.tight_layout()
         plt.savefig(self.figures_dir / "dimension6_mode_comparison.png", dpi=150)
         plt.close()
-        print(f"  图表已保存: {self.figures_dir / 'dimension6_mode_comparison.png'}")
+        print(f"  Chart saved: {self.figures_dir / 'dimension6_mode_comparison.png'}")
         print()
 
     def generate_summary_report(self):
