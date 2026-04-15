@@ -11,12 +11,12 @@ Based on the experiment design specification, implements 6 validation dimensions
 
 ## Output
 
-The script outputs analysis results to the terminal and generates visualization charts in `docs/figures/`:
+The script outputs analysis results to the terminal and generates vector charts (SVG) in `docs/figures/`:
 
-- `dimension1_eye_effectiveness.png` - Eye tracking metrics effectiveness
-- `dimension2_normalization.png` - Normalization algorithm effectiveness
-- `dimension4_ema_convergence.png` - EMA convergence analysis
-- `dimension6_mode_comparison.png` - Mode comparison analysis
+- `dimension1_eye_effectiveness.svg` - Eye tracking metrics effectiveness
+- `dimension2_normalization.svg` - Normalization algorithm effectiveness
+- `dimension4_ema_convergence.svg` - EMA convergence analysis
+- `dimension6_mode_comparison.svg` - Mode comparison analysis
 
 All charts are in English.
 

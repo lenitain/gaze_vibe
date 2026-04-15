@@ -310,9 +310,9 @@ class ExperimentAnalyzer:
             ax.set_title("Regression Rate Distribution by Choice")
 
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "dimension1_eye_effectiveness.png", dpi=150)
+        plt.savefig(self.figures_dir / "dimension1_eye_effectiveness.svg", format="svg")
         plt.close()
-        print(f"  Chart saved: {self.figures_dir / 'dimension1_eye_effectiveness.png'}")
+        print(f"  Chart saved: {self.figures_dir / 'dimension1_eye_effectiveness.svg'}")
         print()
 
     def analyze_dimension2_normalization(self):
@@ -421,9 +421,9 @@ class ExperimentAnalyzer:
             ax.set_title("Normalization Deviation Distribution")
 
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "dimension2_normalization.png", dpi=150)
+        plt.savefig(self.figures_dir / "dimension2_normalization.svg", format="svg")
         plt.close()
-        print(f"  Chart saved: {self.figures_dir / 'dimension2_normalization.png'}")
+        print(f"  Chart saved: {self.figures_dir / 'dimension2_normalization.svg'}")
         print()
 
     def analyze_dimension3_prediction(self):
@@ -543,9 +543,9 @@ class ExperimentAnalyzer:
             ax.legend()
 
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "dimension4_ema_convergence.png", dpi=150)
+        plt.savefig(self.figures_dir / "dimension4_ema_convergence.svg", format="svg")
         plt.close()
-        print(f"  Chart saved: {self.figures_dir / 'dimension4_ema_convergence.png'}")
+        print(f"  Chart saved: {self.figures_dir / 'dimension4_ema_convergence.svg'}")
         print()
 
     def analyze_dimension6_mode_comparison(self):
@@ -626,9 +626,9 @@ class ExperimentAnalyzer:
             ax.set_xticklabels(modes, rotation=0)
 
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "dimension6_mode_comparison.png", dpi=150)
+        plt.savefig(self.figures_dir / "dimension6_mode_comparison.svg", format="svg")
         plt.close()
-        print(f"  Chart saved: {self.figures_dir / 'dimension6_mode_comparison.png'}")
+        print(f"  Chart saved: {self.figures_dir / 'dimension6_mode_comparison.svg'}")
         print()
 
     def generate_summary_report(self):
