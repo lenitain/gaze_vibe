@@ -1,3 +1,4 @@
 /backend/.env
 /backend/.venv/
 /backend/experiment_data.jsonl
+/docs/figures/
