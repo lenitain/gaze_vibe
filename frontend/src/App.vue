@@ -81,16 +81,10 @@ function toggleMode() {
   roundCount.value = 0
   fetch('/api/eye-model/reset', { method: 'POST' }).catch(() => {})
 
-  // 停止当前追踪
+  // 停止当前追踪，等用户提交问题后再启动
   if (eyeTrackerRef.value) {
     eyeTrackerRef.value.stopTracking()
     isEyeTracking.value = false
-  }
-
-  // 进入实验组时立即启动追踪
-  if (experimentMode.value !== 'control' && eyeTrackerRef.value) {
-    eyeTrackerRef.value.startTracking()
-    isEyeTracking.value = true
   }
 }
 
