@@ -36,12 +36,13 @@
   --statusline3: #e67e80;
 
   /* Font sizes */
-  --font-xs: 18px;
-  --font-sm: 21px;
-  --font-base: 22px;
-  --font-lg: 24px;
-  --font-xl: 27px;
-  --font-2xl: 30px;
-  --font-3xl: 36px;
-  --font-4xl: 42px;
+  --font-scale: 0.7;
+  --font-xs: calc(18px * var(--font-scale));
+  --font-sm: calc(21px * var(--font-scale));
+  --font-base: calc(22px * var(--font-scale));
+  --font-lg: calc(24px * var(--font-scale));
+  --font-xl: calc(27px * var(--font-scale));
+  --font-2xl: calc(30px * var(--font-scale));
+  --font-3xl: calc(36px * var(--font-scale));
+  --font-4xl: calc(42px * var(--font-scale));
 }

@@ -316,21 +316,10 @@ function handleRegionSwitch({ from, to }) {
     />
 
     <header class="header">
-      <h1>GazeVibe</h1>
-      <p class="subtitle">眼动追踪 AI 编程助手</p>
-      <p v-if="projectFolder" class="project-name">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-        </svg>
-        {{ projectFolder.name }}
-      </p>
-      <div class="experiment-toggle">
-        <span class="toggle-label">
-          实验模式:
-          {{ experimentMode === 'full' ? '完整' : experimentMode === 'manual' ? '手动' : '对照' }}
-        </span>
-        <button 
-          @click.stop="toggleMode" 
+      <div class="header-left">
+        <h1>GazeVibe</h1>
+        <button
+          @click.stop="toggleMode"
           :class="['toggle-btn', experimentMode]"
         >
           {{ experimentMode === 'full' ? '眼动+自动' : experimentMode === 'manual' ? '眼动+手动' : '对照组' }}
@@ -342,6 +331,7 @@ function handleRegionSwitch({ from, to }) {
       <div class="sidebar" v-if="showFileExplorer && !showFolderSelector">
         <FileTree
           :files="indexedFiles"
+          :project-folder="projectFolder"
           @select="handleFileSelect"
         />
       </div>
@@ -432,43 +422,21 @@ function handleRegionSwitch({ from, to }) {
 }
 
 .header {
-  text-align: center;
-  padding: 20px 0;
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
   border-bottom: 1px solid var(--bg3);
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .header h1 {
-  font-size: var(--font-4xl);
-  color: var(--blue);
-}
-
-.subtitle {
-  color: var(--grey1);
-  margin-top: 8px;
   font-size: var(--font-lg);
-}
-
-.project-name {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 8px;
-  color: var(--aqua);
-  font-size: var(--font-sm);
-}
-
-.experiment-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.toggle-label {
-  font-size: var(--font-sm);
-  color: var(--grey1);
+  color: var(--blue);
 }
 
 .toggle-btn {

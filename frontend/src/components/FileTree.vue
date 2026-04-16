@@ -3,7 +3,8 @@ import { ref, computed } from 'vue'
 import FileTreeNode from './FileTreeNode.vue'
 
 const props = defineProps({
-  files: Array
+  files: Array,
+  projectFolder: Object
 })
 
 const emit = defineEmits(['select'])
@@ -73,7 +74,12 @@ function selectFile(file) {
 <template>
   <div class="file-tree">
     <div class="tree-header">
-      <span class="header-title">项目文件</span>
+      <span class="header-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+        </svg>
+        {{ projectFolder?.name || '项目文件' }}
+      </span>
       <span class="file-count" v-if="files">{{ files.length }} 个文件</span>
     </div>
 
@@ -116,6 +122,9 @@ function selectFile(file) {
 }
 
 .header-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--font-base);
   font-weight: 600;
   color: var(--fg);
