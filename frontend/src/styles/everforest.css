@@ -7,10 +7,10 @@
   --bg3: #475258;
   --bg4: #4f585e;
   --bg5: #56635f;
-  --bg-visual: #4a555b;
+  --bg-visual: #543a48;
   --bg-red: #514045;
-  --bg-green: #424a3e;
-  --bg-blue: #3a4b54;
+  --bg-green: #425047;
+  --bg-blue: #3a515d;
   --bg-yellow: #4d4c43;
 
   --fg: #d3c6aa;
@@ -35,14 +35,14 @@
   --statusline2: #d3c6aa;
   --statusline3: #e67e80;
 
-  /* Font sizes */
-  --font-scale: 0.6;
-  --font-xs: calc(18px * var(--font-scale));
-  --font-sm: calc(21px * var(--font-scale));
-  --font-base: calc(22px * var(--font-scale));
-  --font-lg: calc(24px * var(--font-scale));
-  --font-xl: calc(27px * var(--font-scale));
-  --font-2xl: calc(30px * var(--font-scale));
-  --font-3xl: calc(36px * var(--font-scale));
-  --font-4xl: calc(42px * var(--font-scale));
+  /* Font sizes - 1.5x scaled */
+  --font-scale: 1.5;
+  --font-xs: calc(12px * var(--font-scale));
+  --font-sm: calc(14px * var(--font-scale));
+  --font-base: calc(15px * var(--font-scale));
+  --font-lg: calc(16px * var(--font-scale));
+  --font-xl: calc(18px * var(--font-scale));
+  --font-2xl: calc(20px * var(--font-scale));
+  --font-3xl: calc(24px * var(--font-scale));
+  --font-4xl: calc(28px * var(--font-scale));
 }
