@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { parseCodeBlocks, extractFilePath, stripCodeBlocks, isFileApplicable } from '../utils/codeParser.js'
 import DiffPreview from './DiffPreview.vue'
 
@@ -25,6 +25,101 @@ const choiceDisabled = ref(false)
 let autoSelected = false
 const overridden = ref(false)
 const effectiveAutoMode = computed(() => props.autoMode && !overridden.value)
+
+const expandedA = ref(false)
+const expandedB = ref(false)
+const shouldTruncateA = ref(false)
+const shouldTruncateB = ref(false)
+const textRefA = ref(null)
+const textRefB = ref(null)
+
+const MAX_TEXT_HEIGHT = 200
+
+function measureText() {
+  nextTick(() => {
+    if (textRefA.value) {
+      shouldTruncateA.value = textRefA.value.scrollHeight > MAX_TEXT_HEIGHT
+    }
+    if (textRefB.value) {
+      shouldTruncateB.value = textRefB.value.scrollHeight > MAX_TEXT_HEIGHT
+    }
+  })
+}
+
+let resizeObserver = null
+onMounted(() => {
+  resizeObserver = new ResizeObserver(measureText)
+  if (textRefA.value) resizeObserver.observe(textRefA.value)
+  if (textRefB.value) resizeObserver.observe(textRefB.value)
+})
+
+onUnmounted(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+})
+
+watch([() => props.answerA, () => props.answerB, () => props.answerSegmentsA, () => props.answerSegmentsB], () => {
+  expandedA.value = false
+  expandedB.value = false
+  shouldTruncateA.value = false
+  shouldTruncateB.value = false
+  nextTick(measureText)
+})
+
+function truncateText(html, maxLines = 8) {
+  if (!html) return ''
+  const lines = html.split('\n')
+  if (lines.length <= maxLines) return html
+  return lines.slice(0, maxLines).join('\n')
+}
+
+const displayTextA = computed(() => {
+  if (!props.answerA) return ''
+  if (expandedA.value || !shouldTruncateA.value) return answerTextA.value
+  return truncateText(answerTextA.value)
+})
+
+const displayTextB = computed(() => {
+  if (!props.answerB) return ''
+  if (expandedB.value || !shouldTruncateB.value) return answerTextB.value
+  return truncateText(answerTextB.value)
+})
+
+const displaySegmentsA = computed(() => {
+  if (!props.answerSegmentsA || props.answerSegmentsA.length <= 1) return null
+  if (expandedA.value || !shouldTruncateA.value) return props.answerSegmentsA
+  let totalLines = 0
+  const result = []
+  for (const seg of props.answerSegmentsA) {
+    const lines = (seg.content || '').split('\n')
+    if (totalLines + lines.length > 8) {
+      result.push({ ...seg, content: lines.slice(0, Math.max(0, 8 - totalLines)).join('\n') })
+      break
+    }
+    result.push(seg)
+    totalLines += lines.length
+  }
+  return result
+})
+
+const displaySegmentsB = computed(() => {
+  if (!props.answerSegmentsB || props.answerSegmentsB.length <= 1) return null
+  if (expandedB.value || !shouldTruncateB.value) return props.answerSegmentsB
+  let totalLines = 0
+  const result = []
+  for (const seg of props.answerSegmentsB) {
+    const lines = (seg.content || '').split('\n')
+    if (totalLines + lines.length > 8) {
+      result.push({ ...seg, content: lines.slice(0, Math.max(0, 8 - totalLines)).join('\n') })
+      break
+    }
+    result.push(seg)
+    totalLines += lines.length
+  }
+  return result
+})
 
 const hasSegments = computed(() =>
   (props.answerSegmentsA && props.answerSegmentsA.length > 1) ||
@@ -268,10 +363,10 @@ defineExpose({
 
 <template>
   <div class="answer-panel">
-    <div 
-      class="answer-col" 
+    <div
+      class="answer-col"
       :id="regionAId"
-      :class="{ 
+      :class="{
         selected: selectedSide === 'A',
         hidden: choiceDisabled && selectedSide !== 'A' && !effectiveAutoMode,
         collapsed: effectiveAutoMode && preferredSide === 'B',
@@ -292,19 +387,33 @@ defineExpose({
         <template v-else>
           <div v-if="!answerA" class="placeholder">等待输入问题...</div>
           <template v-else>
-            <template v-if="answerSegmentsA && answerSegmentsA.length > 1">
+            <template v-if="displaySegmentsA">
               <div
-                v-for="(seg, idx) in answerSegmentsA"
-                :key="seg.id || idx"
-                class="segment-block"
+                ref="textRefA"
+                class="text-container"
               >
-                <div v-if="seg.contextHint" class="segment-hint">{{ seg.contextHint }}</div>
-                <div class="answer-text" v-html="seg.content"></div>
+                <div
+                  v-for="(seg, idx) in displaySegmentsA"
+                  :key="seg.id || idx"
+                  class="segment-block"
+                >
+                  <div v-if="seg.contextHint" class="segment-hint">{{ seg.contextHint }}</div>
+                  <div class="answer-text" v-html="seg.content"></div>
+                </div>
               </div>
             </template>
             <template v-else>
-              <div class="answer-text" v-html="answerTextA"></div>
+              <div ref="textRefA" class="text-container">
+                <div class="answer-text" v-html="displayTextA"></div>
+              </div>
             </template>
+            <button
+              v-if="shouldTruncateA"
+              class="toggle-btn"
+              @click="expandedA = !expandedA"
+            >
+              {{ expandedA ? '收起' : '展开全文' }}
+            </button>
             <div v-if="codeBlocksA.length > 0" class="code-blocks">
               <div
                 v-for="block in codeBlocksA"
@@ -352,10 +461,10 @@ defineExpose({
 
     <div class="divider" :class="{ hidden: choiceDisabled && !autoMode }"></div>
 
-    <div 
-      class="answer-col" 
+    <div
+      class="answer-col"
       :id="regionBId"
-      :class="{ 
+      :class="{
         selected: selectedSide === 'B',
         hidden: choiceDisabled && selectedSide !== 'B' && !autoMode,
         collapsed: autoMode && preferredSide === 'A',
@@ -376,19 +485,33 @@ defineExpose({
         <template v-else>
           <div v-if="!answerB" class="placeholder">等待输入问题...</div>
           <template v-else>
-            <template v-if="answerSegmentsB && answerSegmentsB.length > 1">
+            <template v-if="displaySegmentsB">
               <div
-                v-for="(seg, idx) in answerSegmentsB"
-                :key="seg.id || idx"
-                class="segment-block"
+                ref="textRefB"
+                class="text-container"
               >
-                <div v-if="seg.contextHint" class="segment-hint">{{ seg.contextHint }}</div>
-                <div class="answer-text" v-html="seg.content"></div>
+                <div
+                  v-for="(seg, idx) in displaySegmentsB"
+                  :key="seg.id || idx"
+                  class="segment-block"
+                >
+                  <div v-if="seg.contextHint" class="segment-hint">{{ seg.contextHint }}</div>
+                  <div class="answer-text" v-html="seg.content"></div>
+                </div>
               </div>
             </template>
             <template v-else>
-              <div class="answer-text" v-html="answerTextB"></div>
+              <div ref="textRefB" class="text-container">
+                <div class="answer-text" v-html="displayTextB"></div>
+              </div>
             </template>
+            <button
+              v-if="shouldTruncateB"
+              class="toggle-btn"
+              @click="expandedB = !expandedB"
+            >
+              {{ expandedB ? '收起' : '展开全文' }}
+            </button>
             <div v-if="codeBlocksB.length > 0" class="code-blocks">
               <div
                 v-for="block in codeBlocksB"
@@ -551,7 +674,6 @@ defineExpose({
 .answer-content {
   flex: 1;
   padding: 16px;
-  overflow-y: auto;
   font-family: 'Fira Code', 'Consolas', monospace;
   font-size: var(--font-base);
   line-height: 1.7;
@@ -562,6 +684,10 @@ defineExpose({
 
 .answer-content.selected {
   border: 2px solid var(--aqua);
+}
+
+.text-container {
+  margin-bottom: 16px;
 }
 
 .answer-text {
@@ -588,6 +714,25 @@ defineExpose({
   border-radius: 4px;
   margin-bottom: 8px;
   display: inline-block;
+}
+
+.toggle-btn {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 12px;
+  background: var(--bg2);
+  color: var(--aqua);
+  border: 1px solid var(--bg3);
+  border-radius: 6px;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+  background: var(--bg3);
+  color: var(--blue);
 }
 
 .placeholder {
