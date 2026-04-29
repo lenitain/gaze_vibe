@@ -32,9 +32,6 @@ const answerSegmentsA = ref([])
 const answerSegmentsB = ref([])
 const currentQuestion = ref('')
 const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
-const diffOpen = ref(false)
-const diffOpenSide = ref(null)
-const savedToast = ref('')
 const choiceSaved = ref(false)
 
 // Confidence inference
@@ -215,7 +212,6 @@ async function handleChoice(side) {
 
   updateConfidence(0, 0, side)
   
-  // 收集详细眼动指标
   let eyeMetrics = null
   if (eyeTrackerRef.value && isEyeTracking.value) {
     eyeTrackerRef.value.stopTracking()
@@ -223,7 +219,7 @@ async function handleChoice(side) {
     eyeMetrics = eyeTrackerRef.value.getAllMetrics()
   }
 
-  const apiPromise = fetch('/api/preference', {
+  fetch('/api/preference', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -232,7 +228,7 @@ async function handleChoice(side) {
       emaBias: emaBias.value,
       confidence: confidence.value,
       decisionTime,
-      eyeMetrics,  // 新增：发送详细眼动指标
+      eyeMetrics,
       answerALength: answerALength.value,
       answerBLength: answerBLength.value
     })
@@ -242,78 +238,9 @@ async function handleChoice(side) {
   }).catch(err => {
     console.error('Save preference failed:', err)
   })
-
-  const writePromise = (async () => {
-    let savedCount = 0
-    for (const file of indexedFiles.value) {
-      if (file._originalContent && file._stagedBy === side) {
-        try {
-          await fileIndexer.writeFile(file.path, file.content)
-          delete file._originalContent
-          delete file._stagedBy
-          savedCount++
-        } catch (err) {
-          console.error(`写入文件失败: ${file.path}`, err)
-        }
-      }
-    }
-    if (savedCount > 0) {
-      savedToast.value = `已保存 ${savedCount} 个文件的修改`
-      setTimeout(() => { savedToast.value = '' }, 3000)
-    }
-    if (answerPanelRef.value) {
-      answerPanelRef.value.commitAll(side)
-    }
-  })()
-
-  await apiPromise
-  writePromise
-}
-
-async function handleApplyChange({ filePath, content, source }) {
-  const file = indexedFiles.value.find(f => f.path === filePath)
-  if (file) {
-    file._originalContent = file.content
-    file._stagedBy = source
-    file.content = content
-  }
-
-  if (selectedFile.value?.path === filePath) {
-    selectedFile.value = { ...selectedFile.value, content }
-  }
-}
-
-function handleUnapplyChange({ filePath }) {
-  const file = indexedFiles.value.find(f => f.path === filePath)
-  if (file && file._originalContent) {
-    file.content = file._originalContent
-    delete file._originalContent
-    delete file._stagedBy
-  }
-
-  if (selectedFile.value?.path === filePath) {
-    const originalFile = indexedFiles.value.find(f => f.path === filePath)
-    if (originalFile) {
-      selectedFile.value = { ...selectedFile.value, content: originalFile.content }
-    }
-  }
-}
-
-function handleDiffToggle(isOpen, side) {
-  diffOpen.value = isOpen
-  diffOpenSide.value = isOpen ? side : null
 }
 
 function handleEyeData(data) {
-  if (diffOpen.value) {
-    if (diffOpenSide.value === 'A') {
-      userPreference.value.timeOnA += data.duration
-    } else if (diffOpenSide.value === 'B') {
-      userPreference.value.timeOnB += data.duration
-    }
-    return
-  }
-
   if (data.region === 'A') {
     userPreference.value.timeOnA += data.duration
   } else if (data.region === 'B') {
@@ -322,8 +249,6 @@ function handleEyeData(data) {
 }
 
 function handleRegionSwitch({ from, to }) {
-  if (diffOpen.value) return
-
   if (from === 'A' && to === 'B') {
     userPreference.value.leftToRight++
   } else if (from === 'B' && to === 'A') {
@@ -404,9 +329,6 @@ function handleRegionSwitch({ from, to }) {
             :answerSegmentsA="answerSegmentsA"
             :answerSegmentsB="answerSegmentsB"
             @choice="handleChoice"
-            @apply-change="handleApplyChange"
-            @unapply-change="handleUnapplyChange"
-            @diff-toggle="handleDiffToggle"
           />
         </div>
 
@@ -420,15 +342,9 @@ function handleRegionSwitch({ from, to }) {
     <EyeTracker 
       v-show="isTreatment"
       ref="eyeTrackerRef"
-      :diff-open="diffOpen"
-      :diff-open-side="diffOpenSide"
       @data="handleEyeData"
       @region-switch="handleRegionSwitch"
     />
-
-    <transition name="fade">
-      <div v-if="savedToast" class="toast toast-success">{{ savedToast }}</div>
-    </transition>
 
     <transition name="fade">
       <div v-if="choiceSaved" class="toast toast-pref">偏好已保存</div>
@@ -642,10 +558,6 @@ function handleRegionSwitch({ from, to }) {
   font-size: var(--font-sm);
   font-weight: 500;
   z-index: 200;
-}
-
-.toast-success {
-  bottom: 80px;
 }
 
 .toast-pref {

@@ -1,7 +1,6 @@
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { parseCodeBlocks, extractFilePath, stripCodeBlocks, isFileApplicable } from '../utils/codeParser.js'
-import DiffPreview from './DiffPreview.vue'
 
 const props = defineProps({
   answerA: String,
@@ -15,111 +14,24 @@ const props = defineProps({
   answerSegmentsB: Array
 })
 
-const emit = defineEmits(['choice', 'apply-change', 'unapply-change', 'diff-toggle'])
+const emit = defineEmits(['choice'])
 
 const selectedSide = ref(null)
-const diffState = ref(null)
-const fileChangesA = ref(new Map())
-const fileChangesB = ref(new Map())
 const choiceDisabled = ref(false)
 let autoSelected = false
 const overridden = ref(false)
 const effectiveAutoMode = computed(() => props.autoMode && !overridden.value)
 
-const expandedA = ref(false)
-const expandedB = ref(false)
-const shouldTruncateA = ref(false)
-const shouldTruncateB = ref(false)
-const textRefA = ref(null)
-const textRefB = ref(null)
+const expandedA = ref(true)
+const expandedB = ref(true)
 
-const MAX_TEXT_HEIGHT = 200
+const displayTextA = computed(() => props.answerA ? answerTextA.value : '')
 
-function measureText() {
-  nextTick(() => {
-    if (textRefA.value) {
-      shouldTruncateA.value = textRefA.value.scrollHeight > MAX_TEXT_HEIGHT
-    }
-    if (textRefB.value) {
-      shouldTruncateB.value = textRefB.value.scrollHeight > MAX_TEXT_HEIGHT
-    }
-  })
-}
+const displayTextB = computed(() => props.answerB ? answerTextB.value : '')
 
-let resizeObserver = null
-onMounted(() => {
-  resizeObserver = new ResizeObserver(measureText)
-  if (textRefA.value) resizeObserver.observe(textRefA.value)
-  if (textRefB.value) resizeObserver.observe(textRefB.value)
-})
+const displaySegmentsA = computed(() => (props.answerSegmentsA && props.answerSegmentsA.length > 1) ? props.answerSegmentsA : null)
 
-onUnmounted(() => {
-  if (resizeObserver) {
-    resizeObserver.disconnect()
-    resizeObserver = null
-  }
-})
-
-watch([() => props.answerA, () => props.answerB, () => props.answerSegmentsA, () => props.answerSegmentsB], () => {
-  expandedA.value = false
-  expandedB.value = false
-  shouldTruncateA.value = false
-  shouldTruncateB.value = false
-  nextTick(measureText)
-})
-
-function truncateText(html, maxLines = 8) {
-  if (!html) return ''
-  const lines = html.split('\n')
-  if (lines.length <= maxLines) return html
-  return lines.slice(0, maxLines).join('\n')
-}
-
-const displayTextA = computed(() => {
-  if (!props.answerA) return ''
-  if (expandedA.value || !shouldTruncateA.value) return answerTextA.value
-  return truncateText(answerTextA.value)
-})
-
-const displayTextB = computed(() => {
-  if (!props.answerB) return ''
-  if (expandedB.value || !shouldTruncateB.value) return answerTextB.value
-  return truncateText(answerTextB.value)
-})
-
-const displaySegmentsA = computed(() => {
-  if (!props.answerSegmentsA || props.answerSegmentsA.length <= 1) return null
-  if (expandedA.value || !shouldTruncateA.value) return props.answerSegmentsA
-  let totalLines = 0
-  const result = []
-  for (const seg of props.answerSegmentsA) {
-    const lines = (seg.content || '').split('\n')
-    if (totalLines + lines.length > 8) {
-      result.push({ ...seg, content: lines.slice(0, Math.max(0, 8 - totalLines)).join('\n') })
-      break
-    }
-    result.push(seg)
-    totalLines += lines.length
-  }
-  return result
-})
-
-const displaySegmentsB = computed(() => {
-  if (!props.answerSegmentsB || props.answerSegmentsB.length <= 1) return null
-  if (expandedB.value || !shouldTruncateB.value) return props.answerSegmentsB
-  let totalLines = 0
-  const result = []
-  for (const seg of props.answerSegmentsB) {
-    const lines = (seg.content || '').split('\n')
-    if (totalLines + lines.length > 8) {
-      result.push({ ...seg, content: lines.slice(0, Math.max(0, 8 - totalLines)).join('\n') })
-      break
-    }
-    result.push(seg)
-    totalLines += lines.length
-  }
-  return result
-})
+const displaySegmentsB = computed(() => (props.answerSegmentsB && props.answerSegmentsB.length > 1) ? props.answerSegmentsB : null)
 
 const hasSegments = computed(() =>
   (props.answerSegmentsA && props.answerSegmentsA.length > 1) ||
@@ -263,69 +175,16 @@ const codeBlocksB = computed(() => allResolvedBlocks.value.filter(b => b.source 
 const answerTextA = computed(() => props.answerA ? stripCodeBlocks(props.answerA) : '')
 const answerTextB = computed(() => props.answerB ? stripCodeBlocks(props.answerB) : '')
 
-const stagedCountA = computed(() => fileChangesA.value.size)
-const stagedCountB = computed(() => fileChangesB.value.size)
-
-function getFileChanges(side) {
-  return side === 'B' ? fileChangesB.value : fileChangesA.value
-}
-
 function selectA() {
   selectedSide.value = 'A'
   choiceDisabled.value = true
-  emit('choice', 'A', Object.fromEntries(fileChangesA.value))
+  emit('choice', 'A')
 }
 
 function selectB() {
   selectedSide.value = 'B'
   choiceDisabled.value = true
-  emit('choice', 'B', Object.fromEntries(fileChangesB.value))
-}
-
-function handleApplyClick(block) {
-  if (!block.filePath) return
-
-  const side = block._panel || block.source
-  const changes = getFileChanges(side)
-  const existing = changes.get(block.filePath)
-  if (existing) {
-    changes.delete(block.filePath)
-    emit('unapply-change', { filePath: block.filePath })
-    return
-  }
-
-  const file = props.files?.find(f => f.path === block.filePath)
-  if (!file) return
-
-  diffState.value = {
-    filePath: block.filePath,
-    originalContent: file.content,
-    newContent: block.code,
-    source: side
-  }
-  emit('diff-toggle', true, side)
-}
-
-function hideDiff() {
-  diffState.value = null
-  emit('diff-toggle', false)
-}
-
-function applyChange() {
-  if (!diffState.value) return
-
-  const { filePath, newContent, source } = diffState.value
-  getFileChanges(source).set(filePath, { content: newContent })
-  emit('apply-change', { filePath, content: newContent, source })
-  hideDiff()
-}
-
-function getBtnClass(filePath, source) {
-  return getFileChanges(source).has(filePath) ? 'pending' : ''
-}
-
-function getBtnText(filePath, source) {
-  return getFileChanges(source).has(filePath) ? '已暂存 (取消)' : '暂存修改'
+  emit('choice', 'B')
 }
 
 function getChooseBtnText(side) {
@@ -334,10 +193,6 @@ function getChooseBtnText(side) {
       return '已选择'
     }
     return '未选择'
-  }
-  const count = side === 'B' ? stagedCountB.value : stagedCountA.value
-  if (count > 0) {
-    return `选择此答案 (${count} 个文件待提交)`
   }
   return '选择此答案'
 }
@@ -350,13 +205,6 @@ defineExpose({
     choiceDisabled.value = false
     autoSelected = false
     overridden.value = false
-    fileChangesA.value.clear()
-    fileChangesB.value.clear()
-  },
-  commitAll: (side) => {
-    if (side === 'A') fileChangesA.value.clear()
-    else if (side === 'B') fileChangesB.value.clear()
-    else { fileChangesA.value.clear(); fileChangesB.value.clear() }
   }
 })
 </script>
@@ -388,10 +236,7 @@ defineExpose({
           <div v-if="!answerA" class="placeholder">等待输入问题...</div>
           <template v-else>
             <template v-if="displaySegmentsA">
-              <div
-                ref="textRefA"
-                class="text-container"
-              >
+              <div class="text-container">
                 <div
                   v-for="(seg, idx) in displaySegmentsA"
                   :key="seg.id || idx"
@@ -403,38 +248,22 @@ defineExpose({
               </div>
             </template>
             <template v-else>
-              <div ref="textRefA" class="text-container">
+              <div class="text-container">
                 <div class="answer-text" v-html="displayTextA"></div>
               </div>
             </template>
-            <button
-              v-if="shouldTruncateA"
-              class="toggle-btn"
-              @click="expandedA = !expandedA"
-            >
-              {{ expandedA ? '收起' : '展开全文' }}
-            </button>
+
             <div v-if="codeBlocksA.length > 0" class="code-blocks">
               <div
                 v-for="block in codeBlocksA"
                 :key="block.blockId"
                 class="code-block"
-                :class="{ staged: block.filePath && fileChangesA.has(block.filePath) }"
               >
                 <div class="block-header">
                   <span class="block-lang">{{ block.lang || 'code' }}</span>
                   <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
-                  <span v-if="block.filePath && fileChangesA.has(block.filePath)" class="staged-badge">已暂存</span>
-                  <button
-                    v-if="block.filePath"
-                    class="apply-btn"
-                    :class="getBtnClass(block.filePath, 'A')"
-                    @click.stop="handleApplyClick(block)"
-                  >
-                    {{ getBtnText(block.filePath, 'A') }}
-                  </button>
                 </div>
-                <div v-if="!block.filePath" class="block-code">
+                <div class="block-code">
                   <pre>{{ block.code }}</pre>
                 </div>
               </div>
@@ -444,18 +273,11 @@ defineExpose({
       </div>
       <button
         class="choose-btn"
-        :class="{ 'has-staged': stagedCountA > 0, 'selected': selectedSide === 'A' }"
+        :class="{ selected: selectedSide === 'A' }"
         @click="selectA"
         :disabled="!answerA || isLoading || choiceDisabled"
       >
         {{ getChooseBtnText('A') }}
-      </button>
-      <button
-        v-if="autoMode && preferredSide === 'B'"
-        class="override-btn"
-        @click="handleOverride"
-      >
-        展开对比
       </button>
     </div>
 
@@ -486,10 +308,7 @@ defineExpose({
           <div v-if="!answerB" class="placeholder">等待输入问题...</div>
           <template v-else>
             <template v-if="displaySegmentsB">
-              <div
-                ref="textRefB"
-                class="text-container"
-              >
+              <div class="text-container">
                 <div
                   v-for="(seg, idx) in displaySegmentsB"
                   :key="seg.id || idx"
@@ -501,38 +320,22 @@ defineExpose({
               </div>
             </template>
             <template v-else>
-              <div ref="textRefB" class="text-container">
+              <div class="text-container">
                 <div class="answer-text" v-html="displayTextB"></div>
               </div>
             </template>
-            <button
-              v-if="shouldTruncateB"
-              class="toggle-btn"
-              @click="expandedB = !expandedB"
-            >
-              {{ expandedB ? '收起' : '展开全文' }}
-            </button>
+
             <div v-if="codeBlocksB.length > 0" class="code-blocks">
               <div
                 v-for="block in codeBlocksB"
                 :key="block.blockId"
                 class="code-block"
-                :class="{ staged: block.filePath && fileChangesB.has(block.filePath) }"
               >
                 <div class="block-header">
                   <span class="block-lang">{{ block.lang || 'code' }}</span>
                   <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
-                  <span v-if="block.filePath && fileChangesB.has(block.filePath)" class="staged-badge">已暂存</span>
-                  <button
-                    v-if="block.filePath"
-                    class="apply-btn"
-                    :class="getBtnClass(block.filePath, 'B')"
-                    @click.stop="handleApplyClick(block)"
-                  >
-                    {{ getBtnText(block.filePath, 'B') }}
-                  </button>
                 </div>
-                <div v-if="!block.filePath" class="block-code">
+                <div class="block-code">
                   <pre>{{ block.code }}</pre>
                 </div>
               </div>
@@ -542,29 +345,13 @@ defineExpose({
       </div>
       <button
         class="choose-btn"
-        :class="{ 'has-staged': stagedCountB > 0, 'selected': selectedSide === 'B' }"
+        :class="{ selected: selectedSide === 'B' }"
         @click="selectB"
         :disabled="!answerB || isLoading || choiceDisabled"
       >
         {{ getChooseBtnText('B') }}
       </button>
-      <button
-        v-if="autoMode && preferredSide === 'A'"
-        class="override-btn"
-        @click="handleOverride"
-      >
-        展开对比
-      </button>
     </div>
-
-    <DiffPreview
-      v-if="diffState"
-      :file-path="diffState.filePath"
-      :original-content="diffState.originalContent"
-      :new-content="diffState.newContent"
-      :on-apply="applyChange"
-      :on-cancel="hideDiff"
-    />
   </div>
 </template>
 
@@ -656,111 +443,6 @@ defineExpose({
   border-radius: 4px;
 }
 
-.override-btn {
-  margin: 8px 16px 12px;
-  padding: 8px 14px;
-  background: var(--bg3);
-  color: var(--fg);
-  border: none;
-  border-radius: 4px;
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.override-btn:hover {
-  background: var(--bg4);
-}
-
-.answer-content {
-  flex: 1;
-  min-height: 0;
-  padding: 16px;
-  font-family: 'Fira Code', 'Consolas', monospace;
-  font-size: var(--font-base);
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--fg);
-}
-
-.answer-content.selected {
-  border: 2px solid var(--aqua);
-}
-
-.text-container {
-  margin-bottom: 16px;
-}
-
-.answer-text {
-  margin-bottom: 16px;
-}
-
-.segment-block {
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px dashed var(--bg3);
-}
-
-.segment-block:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
-
-.segment-hint {
-  font-size: var(--font-xs);
-  color: var(--aqua);
-  padding: 4px 10px;
-  background: var(--bg-aqua);
-  border-radius: 4px;
-  margin-bottom: 8px;
-  display: inline-block;
-}
-
-.toggle-btn {
-  display: block;
-  width: 100%;
-  padding: 8px;
-  margin-bottom: 12px;
-  background: var(--bg2);
-  color: var(--aqua);
-  border: 1px solid var(--bg3);
-  border-radius: 6px;
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.toggle-btn:hover {
-  background: var(--bg3);
-  color: var(--blue);
-}
-
-.placeholder {
-  color: var(--grey1);
-}
-
-.loading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--grey1);
-}
-
-.spinner {
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--bg3);
-  border-top-color: var(--blue);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 .divider {
   width: 2px;
   background: var(--bg3);
@@ -785,22 +467,12 @@ defineExpose({
   border: 1px solid var(--bg3);
 }
 
-.code-block.staged {
-  border-color: var(--yellow);
-}
-
 .block-header {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
   background: var(--bg2);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.block-header:hover {
-  background: var(--bg3);
 }
 
 .block-lang {
@@ -819,42 +491,6 @@ defineExpose({
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.staged-badge {
-  font-size: 11px;
-  color: var(--bg0);
-  background: var(--yellow);
-  padding: 1px 6px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
-.apply-btn {
-  padding: 4px 10px;
-  background: var(--green);
-  color: var(--bg0);
-  border: none;
-  border-radius: 4px;
-  font-size: var(--font-xs);
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.apply-btn:hover {
-  background: var(--aqua);
-}
-
-.apply-btn.pending {
-  background: var(--red);
-  color: var(--bg0);
-}
-
-.apply-btn.pending:hover {
-  opacity: 0.85;
 }
 
 .block-code {
@@ -889,14 +525,6 @@ defineExpose({
 .choose-btn:hover:not(:disabled) {
   background: var(--aqua);
   transform: translateY(-1px);
-}
-
-.choose-btn.has-staged {
-  background: var(--green);
-}
-
-.choose-btn.has-staged:hover:not(:disabled) {
-  background: var(--aqua);
 }
 
 .choose-btn:disabled {
