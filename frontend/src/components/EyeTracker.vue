@@ -422,10 +422,18 @@ async function startTracking() {
     startDurationUpdate()
 
     const videoEl = document.getElementById('webgazerVideoFeed')
-    if (videoEl) videoEl.style.display = 'block'
+    if (videoEl) {
+      videoEl.style.display = 'block'
+      videoEl.width = 160
+      videoEl.height = 120
+    }
 
     const videoContainer = document.getElementById('webgazerVideoContainer')
-    if (videoContainer) videoContainer.style.display = 'block'
+    if (videoContainer) {
+      videoContainer.style.display = 'block'
+      videoContainer.style.width = '160px'
+      videoContainer.style.height = '120px'
+    }
 
     console.log('追踪已启动')
   } catch (err) {
