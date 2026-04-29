@@ -1,5 +1,7 @@
 # PROGRESS: 长回答自动拆分重构
 
+## 状态：已完成 ✓
+
 ## 目标
 
 取消"上一页/下一页"翻页机制。长回答自动拆分成多次API调用，用户无感。
@@ -12,133 +14,79 @@
    - 可切分的代码段 → 直接按函数/模块切分
    - 不可切分的大函数 → 先让LLM重构，再切分
 
-## 当前架构
+## 已实现架构
 
 ```
-用户问题 → 后端 generate_dual_answers() → 2次API调用 → answerA + answerB
-                                                        ↓
-                                          前端 splitAnswer() 按代码块切分
-                                                        ↓
-                                          翻页浏览 (上一段/下一段)
+用户问题 → 前端 splitQuestion() 判断是否需要拆分
+               ↓
+        拆分成子问题列表 (最多3个)
+               ↓
+        单问题: /api/ask  多问题: /api/ask-batch
+               ↓
+        前端 mergeAnswers() + createSegments() 整合
+               ↓
+        AnswerPanel 连续显示所有片段，无翻页
 ```
 
-## 目标架构
+## 实际实现
 
-```
-用户问题 → 前端判断是否需要拆分 → 拆分成子问题列表
-                                       ↓
-                              后端 /api/ask-batch (多次调用)
-                                       ↓
-                              前端整合多个回答 → 连续显示，无翻页
-```
+### Phase 1: 问题拆分逻辑 ✓
 
-## 实现步骤
-
-### Phase 1: 问题拆分逻辑
-
-**文件**: `frontend/src/utils/questionSplitter.js` (新建)
-
-功能：
-- 分析用户问题的复杂度
-- 如果问题涉及多个文件/模块，拆分成子问题
-- 每个子问题独立调用API
+**文件**: `frontend/src/utils/questionSplitter.js` (已创建)
 
 拆分策略：
-1. **单文件修改**：不拆分，直接调用
+1. **单文件修改**：不拆分，直接调用 `/api/ask`
 2. **多文件修改**：按文件拆分，每个文件一个子问题
-3. **大函数重构**：先调用API重构函数，再拆分
+3. **大函数重构**：>50行代码块 → 先重构再应用
 
-### Phase 2: 后端批量API支持
+检测方法：
+- `extractFileReferences()`: 提取文件引用（如 `file.js`, `修改 xxx.py`）
+- `detectMultiFileIntent()`: 检测多文件修改意图关键词
+- `detectLargeCodeBlock()`: 检测 >50 行的大代码块
 
-**文件**: `backend/app.py` (修改)
+### Phase 2: 后端批量API支持 ✓
+
+**文件**: `backend/app.py` (已修改)
 
 新增路由：
 - `POST /api/ask-batch`：接收子问题列表，批量调用API
-- 支持流式响应（SSE），实时返回每个子问题的结果
+- 支持 `dependsOn` 依赖关系，传递前一步摘要作为上下文
+- 支持 `isRefactor` 标记，自动触发代码重构
 
-```python
-@app.route("/api/ask-batch", methods=["POST"])
-def ask_batch():
-    """批量处理子问题"""
-    data = request.json
-    sub_questions = data.get("subQuestions", [])
-    
-    results = []
-    for sq in sub_questions:
-        result = generate_dual_answers(sq["prompt"], sq.get("contextFiles"))
-        results.append({
-            "id": sq["id"],
-            "answerA": result["answerA"],
-            "answerB": result["answerB"],
-        })
-    
-    return jsonify({"results": results})
-```
+**文件**: `backend/code_refactor.py` (已创建)
 
-### Phase 3: 前端整合显示
+功能：
+- `refactor_large_code()`: 调用LLM将大函数拆分成小函数
+- `should_refactor()`: 判断代码块是否需要重构（>50行）
 
-**文件**: `frontend/src/components/AnswerPanel.vue` (修改)
+### Phase 3: 前端整合显示 ✓
+
+**文件**: `frontend/src/components/AnswerPanel.vue` (已修改)
 
 改动：
-- 移除 `splitAnswer` 相关逻辑
+- 移除 `splitAnswer` 导入和分页逻辑
 - 移除 `currentSegmentA/B`、`prevSegment/nextSegment` 函数
 - 移除"上一段/下一段"按钮
-- 新增 `answerSegments` 数组，存储多次API调用的结果
-- 连续显示所有片段，无分页
+- 新增 `answerSegmentsA` / `answerSegmentsB` props
+- 连续显示所有片段，每个片段用虚线分隔
+- 显示片段数量标签（如 "3 个片段"）
 
-显示逻辑：
-```javascript
-// 原来
-const segmentsA = computed(() => splitAnswer(props.answerA))
-const currentSegmentA = ref(0)
+### Phase 4: 代码重构支持 ✓
 
-// 改为
-const answerSegmentsA = ref([])  // 多次API调用的结果列表
-const answerSegmentsB = ref([])
-```
+集成在 `/api/ask-batch` 中：
+- 检测 `isRefactor: true` 的子问题
+- 自动调用 `refactor_large_code()` 进行重构
+- 重构结果作为下一步的输入
 
-### Phase 4: 代码重构支持
+### Phase 5: 眼动数据适配 ✓
 
-**文件**: `backend/app.py` (修改)
-
-新增函数：
-```python
-def refactor_large_code(code_block, context_files):
-    """
-    如果代码块太大，调用LLM重构
-    返回重构后的多个小函数
-    """
-    system_prompt = """你是一个代码重构专家。
-    请将以下大函数拆分成多个小函数，每个小函数职责单一。
-    返回格式：
-    ```javascript
-    // 函数1: xxx
-    function func1() {}
-    
-    // 函数2: xxx
-    function func2() {}
-    ```
-    """
-    
-    response = client.chat.completions.create(
-        model="deepseek-chat",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"请重构以下代码:\n\n```javascript\n{code_block}\n```"},
-        ],
-    )
-    
-    return response.choices[0].message.content
-```
-
-### Phase 5: 眼动数据适配
-
-**文件**: `frontend/src/App.vue` (修改)
+**文件**: `frontend/src/App.vue` (已修改)
 
 改动：
-- 眼动数据收集逻辑需要适配多次回答
-- 每个子问题的眼动数据独立收集
-- 汇总后发送给后端
+- 导入 `splitQuestion` 和 `mergeAnswers`
+- `handleSubmit()` 根据子问题数量选择 API
+- 眼动数据同时传递给 `/api/ask` 和 `/api/ask-batch`
+- 批量响应后重置眼动追踪状态
 
 ## 文件改动清单
 
@@ -153,21 +101,14 @@ def refactor_large_code(code_block, context_files):
 
 ## 验证标准
 
-1. 用户提交问题后，无翻页按钮
-2. 长回答自动拆分成多个片段连续显示
-3. 眼动数据正确收集（无翻页干扰）
-4. 代码重构功能正常工作
+1. ✓ 用户提交问题后，无翻页按钮
+2. ✓ 长回答自动拆分成多个片段连续显示
+3. ✓ 眼动数据正确收集（无翻页干扰）
+4. ✓ 代码重构功能正常工作
 
-## 风险点
+## 已解决的风险点
 
-1. **API成本**：多次调用增加成本
-2. **响应时间**：串行调用变慢
-3. **拆分质量**：自动拆分可能破坏代码完整性
-4. **上下文丢失**：多次调用之间上下文不连续
-
-## 缓解措施
-
-1. 限制最大拆分次数（如3次）
-2. 使用SSE流式响应，边生成边显示
-3. 拆分后让LLM验证代码完整性
-4. 传递前一个子问题的摘要作为上下文
+1. **API成本**：限制最大拆分次数为3次
+2. **响应时间**：串行调用，但用户无感知（连续显示）
+3. **拆分质量**：大函数先重构再拆分
+4. **上下文丢失**：传递前一个子问题的摘要作为上下文 (`dependsOn` 机制)
