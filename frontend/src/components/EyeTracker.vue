@@ -311,6 +311,7 @@ async function startTracking() {
   try {
     if (!isInitialized.value) {
       await webgazer.begin()
+      webgazer.setVideoViewerSize(120, 90)
       webgazer.removeMouseEventListeners()
       webgazer.showPredictionPoints(false)
 
@@ -374,6 +375,7 @@ async function startTracking() {
       isInitialized.value = true
     } else {
       await webgazer.resume()
+      webgazer.setVideoViewerSize(120, 90)
     }
 
     webgazer.showPredictionPoints(true)
