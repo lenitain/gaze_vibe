@@ -342,4 +342,4 @@ if __name__ == "__main__":
     print(f"  眼动模型: 已初始化 (EMA α = {EyeTrackerProcessor.ALPHA})")
     print(f"  访问 http://localhost:8000/api/health 检查状态")
     print("=" * 60)
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    app.run(host="0.0.0.0", port=8000, debug=True, use_reloader=False)
