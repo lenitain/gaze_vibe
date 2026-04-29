@@ -8,6 +8,8 @@ import FileTree from './components/FileTree.vue'
 import FileViewer from './components/FileViewer.vue'
 import { FileIndexer } from './utils/fileIndexer.js'
 import { selectRelevantFiles, formatFilesForPrompt } from './utils/fileSelector.js'
+import { splitQuestion } from './utils/questionSplitter.js'
+import { mergeAnswers, createSegments } from './utils/answerMerger.js'
 
 const isEyeTracking = ref(false)
 const eyeTrackerRef = ref(null)
@@ -25,6 +27,8 @@ const answerA = ref('')
 const answerB = ref('')
 const answerALength = ref(0)
 const answerBLength = ref(0)
+const answerSegmentsA = ref([])
+const answerSegmentsB = ref([])
 const currentQuestion = ref('')
 const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
 const diffOpen = ref(false)
@@ -108,64 +112,83 @@ async function handleSubmit(prompt) {
   currentQuestion.value = prompt
   isLoading.value = true
   answerPanelRef.value?.resetChoice()
+  answerSegmentsA.value = []
+  answerSegmentsB.value = []
 
   try {
     const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
     const contextFiles = formatFilesForPrompt(relevantFiles)
 
-    // 收集眼动数据
     let eyeData = null
     if (eyeTrackerRef.value && isEyeTracking.value) {
-      // 停止当前追踪并获取数据
       eyeTrackerRef.value.stopTracking()
       isEyeTracking.value = false
 
-      // 获取详细眼动指标
       eyeData = {
         timeOnA: userPreference.value.timeOnA,
         timeOnB: userPreference.value.timeOnB,
         leftToRight: userPreference.value.leftToRight,
         rightToLeft: userPreference.value.rightToLeft,
-        // 传递上一轮答案的字符数，用于后端归一化
         answerALength: answerALength.value,
         answerBLength: answerBLength.value,
         ...eyeTrackerRef.value.getAllMetrics()
       }
     }
 
-    const requestBody = {
-      prompt,
-      contextFiles,
-      experimentMode: experimentMode.value,
-      eyeData  // 新增：发送眼动数据
+    const subQuestions = splitQuestion(prompt, contextFiles)
+
+    let data
+    if (subQuestions.length > 1) {
+      const response = await fetch('/api/ask-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subQuestions,
+          contextFiles,
+          experimentMode: experimentMode.value,
+          eyeData
+        })
+      })
+      data = await response.json()
+
+      if (data.results && data.results.length > 0) {
+        const merged = mergeAnswers(data.results)
+        answerA.value = merged.answerA
+        answerB.value = merged.answerB
+
+        const segments = createSegments(data.results)
+        answerSegmentsA.value = segments.segmentsA
+        answerSegmentsB.value = segments.segmentsB
+      }
+    } else {
+      const response = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          contextFiles,
+          experimentMode: experimentMode.value,
+          eyeData
+        })
+      })
+      data = await response.json()
+      answerA.value = data.answerA
+      answerB.value = data.answerB
     }
 
-    const response = await fetch('/api/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    })
-    
-    const data = await response.json()
-    answerA.value = data.answerA
-    answerB.value = data.answerB
-    // 保存答案字符数，用于下一轮归一化
     answerALength.value = data.answerA?.length || 0
     answerBLength.value = data.answerB?.length || 0
 
-    // 显示后端调整结果
     if (data.eyeProcessing && data.eyeProcessing.valid) {
       console.log('眼动调整结果:', data.eyeProcessing)
     }
 
-    // 重置眼动数据用于下一轮
     userPreference.value.timeOnA = 0
     userPreference.value.timeOnB = 0
     userPreference.value.leftToRight = 0
     userPreference.value.rightToLeft = 0
     decisionStartTime.value = Date.now()
-    
-    // 启动新一轮追踪（对照组除外）
+
     if (experimentMode.value !== 'control' && eyeTrackerRef.value) {
       eyeTrackerRef.value.startTracking()
       isEyeTracking.value = true
@@ -371,6 +394,8 @@ function handleRegionSwitch({ from, to }) {
             :preferred-side="preferredSide"
             :auto-mode="autoMode"
             :confidence="confidence"
+            :answerSegmentsA="answerSegmentsA"
+            :answerSegmentsB="answerSegmentsB"
             @choice="handleChoice"
             @apply-change="handleApplyChange"
             @unapply-change="handleUnapplyChange"

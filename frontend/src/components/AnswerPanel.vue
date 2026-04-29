@@ -1,7 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { parseCodeBlocks, extractFilePath, stripCodeBlocks, isFileApplicable } from '../utils/codeParser.js'
-import { splitAnswer } from '../utils/answerSplitter.js'
 import DiffPreview from './DiffPreview.vue'
 
 const props = defineProps({
@@ -11,7 +10,9 @@ const props = defineProps({
   files: Array,
   preferredSide: String,
   autoMode: Boolean,
-  confidence: Number
+  confidence: Number,
+  answerSegmentsA: Array,
+  answerSegmentsB: Array
 })
 
 const emit = defineEmits(['choice', 'apply-change', 'unapply-change', 'diff-toggle'])
@@ -25,12 +26,10 @@ let autoSelected = false
 const overridden = ref(false)
 const effectiveAutoMode = computed(() => props.autoMode && !overridden.value)
 
-const currentSegmentA = ref(0)
-const currentSegmentB = ref(0)
-const segmentsA = computed(() => splitAnswer(props.answerA))
-const segmentsB = computed(() => splitAnswer(props.answerB))
-const totalSegmentsA = computed(() => segmentsA.value.length)
-const totalSegmentsB = computed(() => segmentsB.value.length)
+const hasSegments = computed(() =>
+  (props.answerSegmentsA && props.answerSegmentsA.length > 1) ||
+  (props.answerSegmentsB && props.answerSegmentsB.length > 1)
+)
 
 watch(() => props.autoMode, (isAuto) => {
   if (isAuto && props.preferredSide && !selectedSide.value && !autoSelected) {
@@ -47,55 +46,6 @@ function handleOverride() {
   autoSelected = false
   overridden.value = true
 }
-
-function nextSegment(side) {
-  if (side === 'A' && currentSegmentA.value < totalSegmentsA.value - 1) {
-    currentSegmentA.value++
-  } else if (side === 'B' && currentSegmentB.value < totalSegmentsB.value - 1) {
-    currentSegmentB.value++
-  }
-}
-
-function prevSegment(side) {
-  if (side === 'A' && currentSegmentA.value > 0) {
-    currentSegmentA.value--
-  } else if (side === 'B' && currentSegmentB.value > 0) {
-    currentSegmentB.value--
-  }
-}
-
-const currentSegmentContentA = computed(() => {
-  const seg = segmentsA.value[currentSegmentA.value]
-  if (!seg) return ''
-  return seg.type === 'text' ? seg.content : ''
-})
-
-const currentSegmentContentB = computed(() => {
-  const seg = segmentsB.value[currentSegmentB.value]
-  if (!seg) return ''
-  return seg.type === 'text' ? seg.content : ''
-})
-
-const currentCodeBlocksA = computed(() => {
-  const seg = segmentsA.value[currentSegmentA.value]
-  if (!seg || seg.type !== 'code') return []
-  return codeBlocksA.value.filter(b => {
-    const blockCode = b.code.trim()
-    return seg.code.includes(blockCode) || blockCode.includes(seg.code)
-  })
-})
-
-const currentCodeBlocksB = computed(() => {
-  const seg = segmentsB.value[currentSegmentB.value]
-  if (!seg || seg.type !== 'code') return []
-  return codeBlocksB.value.filter(b => {
-    const blockCode = b.code.trim()
-    return seg.code.includes(blockCode) || blockCode.includes(seg.code)
-  })
-})
-
-watch(() => props.answerA, () => { currentSegmentA.value = 0 })
-watch(() => props.answerB, () => { currentSegmentB.value = 0 })
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -307,8 +257,6 @@ defineExpose({
     overridden.value = false
     fileChangesA.value.clear()
     fileChangesB.value.clear()
-    currentSegmentA.value = 0
-    currentSegmentB.value = 0
   },
   commitAll: (side) => {
     if (side === 'A') fileChangesA.value.clear()
@@ -333,6 +281,7 @@ defineExpose({
       <div class="answer-header">
         <span class="badge detailed">详细解答</span>
         <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个文件</span>
+        <span v-if="hasSegments && answerSegmentsA && answerSegmentsA.length > 1" class="segment-count">{{ answerSegmentsA.length }} 个片段</span>
         <span v-if="preferredSide === 'A' && !effectiveAutoMode" class="preference-hint">推断偏好</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'A' }">
@@ -342,12 +291,23 @@ defineExpose({
         </div>
         <template v-else>
           <div v-if="!answerA" class="placeholder">等待输入问题...</div>
-          <template v-else-if="segmentsA.length > 0">
-            <div class="segment-indicator">{{ currentSegmentA + 1 }} / {{ totalSegmentsA }}</div>
-            <div v-if="currentSegmentContentA" class="answer-text">{{ currentSegmentContentA }}</div>
-            <div v-if="currentCodeBlocksA.length > 0" class="code-blocks">
+          <template v-else>
+            <template v-if="answerSegmentsA && answerSegmentsA.length > 1">
               <div
-                v-for="block in currentCodeBlocksA"
+                v-for="(seg, idx) in answerSegmentsA"
+                :key="seg.id || idx"
+                class="segment-block"
+              >
+                <div v-if="seg.contextHint" class="segment-hint">{{ seg.contextHint }}</div>
+                <div class="answer-text" v-html="seg.content"></div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="answer-text" v-html="answerTextA"></div>
+            </template>
+            <div v-if="codeBlocksA.length > 0" class="code-blocks">
+              <div
+                v-for="block in codeBlocksA"
                 :key="block.blockId"
                 class="code-block"
                 :class="{ staged: block.filePath && fileChangesA.has(block.filePath) }"
@@ -369,10 +329,6 @@ defineExpose({
                   <pre>{{ block.code }}</pre>
                 </div>
               </div>
-            </div>
-            <div class="segment-nav">
-              <button class="nav-btn" :disabled="currentSegmentA <= 0" @click="prevSegment('A')">上一段</button>
-              <button class="nav-btn" :disabled="currentSegmentA >= totalSegmentsA - 1" @click="nextSegment('A')">下一段</button>
             </div>
           </template>
         </template>
@@ -409,6 +365,7 @@ defineExpose({
       <div class="answer-header">
         <span class="badge concise">简洁解答</span>
         <span v-if="codeBlocksB.length > 0" class="block-count">{{ codeBlocksB.length }} 个文件</span>
+        <span v-if="hasSegments && answerSegmentsB && answerSegmentsB.length > 1" class="segment-count">{{ answerSegmentsB.length }} 个片段</span>
         <span v-if="preferredSide === 'B' && !autoMode" class="preference-hint">推断偏好</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'B' }">
@@ -418,12 +375,23 @@ defineExpose({
         </div>
         <template v-else>
           <div v-if="!answerB" class="placeholder">等待输入问题...</div>
-          <template v-else-if="segmentsB.length > 0">
-            <div class="segment-indicator">{{ currentSegmentB + 1 }} / {{ totalSegmentsB }}</div>
-            <div v-if="currentSegmentContentB" class="answer-text">{{ currentSegmentContentB }}</div>
-            <div v-if="currentCodeBlocksB.length > 0" class="code-blocks">
+          <template v-else>
+            <template v-if="answerSegmentsB && answerSegmentsB.length > 1">
               <div
-                v-for="block in currentCodeBlocksB"
+                v-for="(seg, idx) in answerSegmentsB"
+                :key="seg.id || idx"
+                class="segment-block"
+              >
+                <div v-if="seg.contextHint" class="segment-hint">{{ seg.contextHint }}</div>
+                <div class="answer-text" v-html="seg.content"></div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="answer-text" v-html="answerTextB"></div>
+            </template>
+            <div v-if="codeBlocksB.length > 0" class="code-blocks">
+              <div
+                v-for="block in codeBlocksB"
                 :key="block.blockId"
                 class="code-block"
                 :class="{ staged: block.filePath && fileChangesB.has(block.filePath) }"
@@ -445,10 +413,6 @@ defineExpose({
                   <pre>{{ block.code }}</pre>
                 </div>
               </div>
-            </div>
-            <div class="segment-nav">
-              <button class="nav-btn" :disabled="currentSegmentB <= 0" @click="prevSegment('B')">上一段</button>
-              <button class="nav-btn" :disabled="currentSegmentB >= totalSegmentsB - 1" @click="nextSegment('B')">下一段</button>
             </div>
           </template>
         </template>
@@ -552,6 +516,14 @@ defineExpose({
   color: var(--grey1);
 }
 
+.segment-count {
+  font-size: var(--font-xs);
+  color: var(--aqua);
+  padding: 2px 8px;
+  background: var(--bg-aqua);
+  border-radius: 4px;
+}
+
 .preference-hint {
   font-size: var(--font-xs);
   color: var(--yellow);
@@ -594,6 +566,28 @@ defineExpose({
 
 .answer-text {
   margin-bottom: 16px;
+}
+
+.segment-block {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed var(--bg3);
+}
+
+.segment-block:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.segment-hint {
+  font-size: var(--font-xs);
+  color: var(--aqua);
+  padding: 4px 10px;
+  background: var(--bg-aqua);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  display: inline-block;
 }
 
 .placeholder {
@@ -772,39 +766,5 @@ defineExpose({
 .choose-btn.selected:disabled {
   background: var(--green);
   color: var(--bg0);
-}
-
-.segment-indicator {
-  font-size: var(--font-xs);
-  color: var(--grey1);
-  margin-bottom: 8px;
-  text-align: center;
-}
-
-.segment-nav {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-  justify-content: center;
-}
-
-.nav-btn {
-  padding: 6px 16px;
-  background: var(--bg3);
-  color: var(--fg);
-  border: none;
-  border-radius: 4px;
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.nav-btn:hover:not(:disabled) {
-  background: var(--bg4);
-}
-
-.nav-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 </style>
