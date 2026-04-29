@@ -584,6 +584,7 @@ defineExpose({
   background: var(--bg1);
   border-radius: 12px;
   overflow: hidden;
+  overflow-y: auto;
   transition: all 0.4s ease;
 }
 
@@ -673,6 +674,7 @@ defineExpose({
 
 .answer-content {
   flex: 1;
+  min-height: 0;
   padding: 16px;
   font-family: 'Fira Code', 'Consolas', monospace;
   font-size: var(--font-base);
