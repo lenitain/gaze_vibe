@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { parseCodeBlocks, extractFilePath, stripCodeBlocks, isFileApplicable } from '../utils/codeParser.js'
+import { splitAnswer } from '../utils/answerSplitter.js'
 import DiffPreview from './DiffPreview.vue'
 
 const props = defineProps({
@@ -24,6 +25,13 @@ let autoSelected = false
 const overridden = ref(false)
 const effectiveAutoMode = computed(() => props.autoMode && !overridden.value)
 
+const currentSegmentA = ref(0)
+const currentSegmentB = ref(0)
+const segmentsA = computed(() => splitAnswer(props.answerA))
+const segmentsB = computed(() => splitAnswer(props.answerB))
+const totalSegmentsA = computed(() => segmentsA.value.length)
+const totalSegmentsB = computed(() => segmentsB.value.length)
+
 watch(() => props.autoMode, (isAuto) => {
   if (isAuto && props.preferredSide && !selectedSide.value && !autoSelected) {
     selectedSide.value = props.preferredSide
@@ -39,6 +47,55 @@ function handleOverride() {
   autoSelected = false
   overridden.value = true
 }
+
+function nextSegment(side) {
+  if (side === 'A' && currentSegmentA.value < totalSegmentsA.value - 1) {
+    currentSegmentA.value++
+  } else if (side === 'B' && currentSegmentB.value < totalSegmentsB.value - 1) {
+    currentSegmentB.value++
+  }
+}
+
+function prevSegment(side) {
+  if (side === 'A' && currentSegmentA.value > 0) {
+    currentSegmentA.value--
+  } else if (side === 'B' && currentSegmentB.value > 0) {
+    currentSegmentB.value--
+  }
+}
+
+const currentSegmentContentA = computed(() => {
+  const seg = segmentsA.value[currentSegmentA.value]
+  if (!seg) return ''
+  return seg.type === 'text' ? seg.content : ''
+})
+
+const currentSegmentContentB = computed(() => {
+  const seg = segmentsB.value[currentSegmentB.value]
+  if (!seg) return ''
+  return seg.type === 'text' ? seg.content : ''
+})
+
+const currentCodeBlocksA = computed(() => {
+  const seg = segmentsA.value[currentSegmentA.value]
+  if (!seg || seg.type !== 'code') return []
+  return codeBlocksA.value.filter(b => {
+    const blockCode = b.code.trim()
+    return seg.code.includes(blockCode) || blockCode.includes(seg.code)
+  })
+})
+
+const currentCodeBlocksB = computed(() => {
+  const seg = segmentsB.value[currentSegmentB.value]
+  if (!seg || seg.type !== 'code') return []
+  return codeBlocksB.value.filter(b => {
+    const blockCode = b.code.trim()
+    return seg.code.includes(blockCode) || blockCode.includes(seg.code)
+  })
+})
+
+watch(() => props.answerA, () => { currentSegmentA.value = 0 })
+watch(() => props.answerB, () => { currentSegmentB.value = 0 })
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -250,6 +307,8 @@ defineExpose({
     overridden.value = false
     fileChangesA.value.clear()
     fileChangesB.value.clear()
+    currentSegmentA.value = 0
+    currentSegmentB.value = 0
   },
   commitAll: (side) => {
     if (side === 'A') fileChangesA.value.clear()
@@ -282,33 +341,40 @@ defineExpose({
           <span>生成中...</span>
         </div>
         <template v-else>
-          <div v-if="answerTextA" class="answer-text">{{ answerTextA }}</div>
           <div v-if="!answerA" class="placeholder">等待输入问题...</div>
-          <div v-if="codeBlocksA.length > 0" class="code-blocks">
-            <div
-              v-for="block in codeBlocksA"
-              :key="block.blockId"
-              class="code-block"
-              :class="{ staged: block.filePath && fileChangesA.has(block.filePath) }"
-            >
-              <div class="block-header">
-                <span class="block-lang">{{ block.lang || 'code' }}</span>
-                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
-                <span v-if="block.filePath && fileChangesA.has(block.filePath)" class="staged-badge">已暂存</span>
-                <button
-                  v-if="block.filePath"
-                  class="apply-btn"
-                  :class="getBtnClass(block.filePath, 'A')"
-                  @click.stop="handleApplyClick(block)"
-                >
-                  {{ getBtnText(block.filePath, 'A') }}
-                </button>
-              </div>
-              <div v-if="!block.filePath" class="block-code">
-                <pre>{{ block.code }}</pre>
+          <template v-else-if="segmentsA.length > 0">
+            <div class="segment-indicator">{{ currentSegmentA + 1 }} / {{ totalSegmentsA }}</div>
+            <div v-if="currentSegmentContentA" class="answer-text">{{ currentSegmentContentA }}</div>
+            <div v-if="currentCodeBlocksA.length > 0" class="code-blocks">
+              <div
+                v-for="block in currentCodeBlocksA"
+                :key="block.blockId"
+                class="code-block"
+                :class="{ staged: block.filePath && fileChangesA.has(block.filePath) }"
+              >
+                <div class="block-header">
+                  <span class="block-lang">{{ block.lang || 'code' }}</span>
+                  <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
+                  <span v-if="block.filePath && fileChangesA.has(block.filePath)" class="staged-badge">已暂存</span>
+                  <button
+                    v-if="block.filePath"
+                    class="apply-btn"
+                    :class="getBtnClass(block.filePath, 'A')"
+                    @click.stop="handleApplyClick(block)"
+                  >
+                    {{ getBtnText(block.filePath, 'A') }}
+                  </button>
+                </div>
+                <div v-if="!block.filePath" class="block-code">
+                  <pre>{{ block.code }}</pre>
+                </div>
               </div>
             </div>
-          </div>
+            <div class="segment-nav">
+              <button class="nav-btn" :disabled="currentSegmentA <= 0" @click="prevSegment('A')">上一段</button>
+              <button class="nav-btn" :disabled="currentSegmentA >= totalSegmentsA - 1" @click="nextSegment('A')">下一段</button>
+            </div>
+          </template>
         </template>
       </div>
       <button
@@ -351,33 +417,40 @@ defineExpose({
           <span>生成中...</span>
         </div>
         <template v-else>
-          <div v-if="answerTextB" class="answer-text">{{ answerTextB }}</div>
           <div v-if="!answerB" class="placeholder">等待输入问题...</div>
-          <div v-if="codeBlocksB.length > 0" class="code-blocks">
-            <div
-              v-for="block in codeBlocksB"
-              :key="block.blockId"
-              class="code-block"
-              :class="{ staged: block.filePath && fileChangesB.has(block.filePath) }"
-            >
-              <div class="block-header">
-                <span class="block-lang">{{ block.lang || 'code' }}</span>
-                <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
-                <span v-if="block.filePath && fileChangesB.has(block.filePath)" class="staged-badge">已暂存</span>
-                <button
-                  v-if="block.filePath"
-                  class="apply-btn"
-                  :class="getBtnClass(block.filePath, 'B')"
-                  @click.stop="handleApplyClick(block)"
-                >
-                  {{ getBtnText(block.filePath, 'B') }}
-                </button>
-              </div>
-              <div v-if="!block.filePath" class="block-code">
-                <pre>{{ block.code }}</pre>
+          <template v-else-if="segmentsB.length > 0">
+            <div class="segment-indicator">{{ currentSegmentB + 1 }} / {{ totalSegmentsB }}</div>
+            <div v-if="currentSegmentContentB" class="answer-text">{{ currentSegmentContentB }}</div>
+            <div v-if="currentCodeBlocksB.length > 0" class="code-blocks">
+              <div
+                v-for="block in currentCodeBlocksB"
+                :key="block.blockId"
+                class="code-block"
+                :class="{ staged: block.filePath && fileChangesB.has(block.filePath) }"
+              >
+                <div class="block-header">
+                  <span class="block-lang">{{ block.lang || 'code' }}</span>
+                  <span v-if="block.filePath" class="block-file">{{ block.filePath }}</span>
+                  <span v-if="block.filePath && fileChangesB.has(block.filePath)" class="staged-badge">已暂存</span>
+                  <button
+                    v-if="block.filePath"
+                    class="apply-btn"
+                    :class="getBtnClass(block.filePath, 'B')"
+                    @click.stop="handleApplyClick(block)"
+                  >
+                    {{ getBtnText(block.filePath, 'B') }}
+                  </button>
+                </div>
+                <div v-if="!block.filePath" class="block-code">
+                  <pre>{{ block.code }}</pre>
+                </div>
               </div>
             </div>
-          </div>
+            <div class="segment-nav">
+              <button class="nav-btn" :disabled="currentSegmentB <= 0" @click="prevSegment('B')">上一段</button>
+              <button class="nav-btn" :disabled="currentSegmentB >= totalSegmentsB - 1" @click="nextSegment('B')">下一段</button>
+            </div>
+          </template>
         </template>
       </div>
       <button
@@ -699,5 +772,39 @@ defineExpose({
 .choose-btn.selected:disabled {
   background: var(--green);
   color: var(--bg0);
+}
+
+.segment-indicator {
+  font-size: var(--font-xs);
+  color: var(--grey1);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.segment-nav {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  justify-content: center;
+}
+
+.nav-btn {
+  padding: 6px 16px;
+  background: var(--bg3);
+  color: var(--fg);
+  border: none;
+  border-radius: 4px;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.nav-btn:hover:not(:disabled) {
+  background: var(--bg4);
+}
+
+.nav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
