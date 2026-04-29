@@ -15,7 +15,7 @@
 
 ## 实现步骤
 
-### Phase 1: 修复 isFileApplicable 过滤逻辑
+### Phase 1: 修复 isFileApplicable 过滤逻辑 ✅ 完成
 
 **文件**: `frontend/src/utils/codeParser.js`
 
@@ -24,22 +24,7 @@
 - 只要有 `filePath`，就保留代码块（不论长度）
 - 无 filePath 的代码块仍按原逻辑过滤
 
-```javascript
-export function isFileApplicable(block, hasFilePath = false) {
-  // 有文件路径的代码块始终显示（即使只有1行）
-  if (hasFilePath) return true
-
-  const code = block.code
-  const lines = code.split('\n')
-
-  // 无路径的代码块需要 >= 2 行
-  if (lines.length < 2) return false
-
-  // ... 其余过滤逻辑不变
-}
-```
-
-### Phase 2: 智能截断显示
+### Phase 2: 智能截断显示 ✅ 完成
 
 **文件**: `frontend/src/components/AnswerPanel.vue`
 
@@ -49,21 +34,7 @@ export function isFileApplicable(block, hasFilePath = false) {
 - 超出高度时截断文本，保留所有代码块
 - 添加"展开/收起"按钮（仅在内容被截断时显示）
 
-```javascript
-const panelHeight = ref(0)
-const contentRef = ref(null)
-const isTruncated = ref(false)
-
-function measureContent() {
-  if (!contentRef.value) return
-  const container = contentRef.value.parentElement
-  const availableHeight = container.clientHeight - 100 // 减去 header 和 button
-  const contentHeight = contentRef.value.scrollHeight
-  isTruncated.value = contentHeight > availableHeight
-}
-```
-
-### Phase 3: 后端确保代码块存在
+### Phase 3: 后端确保代码块存在 ⏳ 待做
 
 **文件**: `backend/app.py`
 
@@ -77,7 +48,7 @@ system_a += "\n\n重要：你的回答必须包含至少一个代码块（用 ``
 system_b += "\n\n重要：你的回答必须包含至少一个代码块（用 ``` 包裹），并标注对应的文件路径。"
 ```
 
-### Phase 4: 前端代码块强制检查
+### Phase 4: 前端代码块强制检查 ⏳ 待做
 
 **文件**: `frontend/src/App.vue`
 
@@ -100,3 +71,12 @@ system_b += "\n\n重要：你的回答必须包含至少一个代码块（用 ``
 3. ✓ 内容超出面板高度时自动截断，无滚动条
 4. ✓ 截断时显示"展开"按钮，点击可查看全部
 5. ✓ 代码块始终完整显示，不被截断
+
+## 完成状态
+
+| Phase | 状态 | 提交 |
+|-------|------|------|
+| Phase 1: isFileApplicable | ✅ 完成 | 522f775 |
+| Phase 2: 智能截断 | ✅ 完成 | e792a51 |
+| Phase 3: 后端代码块保证 | ⏳ 待做 | - |
+| Phase 4: 前端代码块检查 | ⏳ 待做 | - |
