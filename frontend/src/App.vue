@@ -10,6 +10,7 @@ import { FileIndexer } from './utils/fileIndexer.js'
 import { selectRelevantFiles, formatFilesForPrompt } from './utils/fileSelector.js'
 import { splitQuestion } from './utils/questionSplitter.js'
 import { mergeAnswers, createSegments } from './utils/answerMerger.js'
+import { parseCodeBlocks } from './utils/codeParser.js'
 
 const isEyeTracking = ref(false)
 const eyeTrackerRef = ref(null)
@@ -178,6 +179,12 @@ async function handleSubmit(prompt) {
 
     answerALength.value = data.answerA?.length || 0
     answerBLength.value = data.answerB?.length || 0
+
+    const blocksA = parseCodeBlocks(answerA.value || '')
+    const blocksB = parseCodeBlocks(answerB.value || '')
+    if (blocksA.length === 0 && blocksB.length === 0) {
+      console.warn('AI response contains no code blocks')
+    }
 
     if (data.eyeProcessing && data.eyeProcessing.valid) {
       console.log('眼动调整结果:', data.eyeProcessing)
