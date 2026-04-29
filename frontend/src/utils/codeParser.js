@@ -59,7 +59,9 @@ export function extractFilePath(block, text, nearbyFiles) {
   return null
 }
 
-export function isFileApplicable(block) {
+export function isFileApplicable(block, hasFilePath = false) {
+  if (hasFilePath) return true
+
   const code = block.code
   const lines = code.split('\n')
 
