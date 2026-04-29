@@ -219,6 +219,23 @@ async function handleChoice(side) {
     eyeMetrics = eyeTrackerRef.value.getAllMetrics()
   }
 
+  const blocks = side === 'A'
+    ? answerPanelRef.value?.codeBlocksA
+    : answerPanelRef.value?.codeBlocksB
+
+  const writes = []
+  if (blocks) {
+    for (const block of blocks) {
+      if (block.filePath) {
+        writes.push(
+          fileIndexer.writeFile(block.filePath, block.code).catch(err =>
+            console.error(`Failed to write ${block.filePath}:`, err)
+          )
+        )
+      }
+    }
+  }
+
   fetch('/api/preference', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -238,6 +255,11 @@ async function handleChoice(side) {
   }).catch(err => {
     console.error('Save preference failed:', err)
   })
+
+  await Promise.all(writes)
+  if (writes.length > 0) {
+    console.log(`Wrote ${writes.length} files to disk`)
+  }
 }
 
 function handleEyeData(data) {

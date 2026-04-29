@@ -200,6 +200,8 @@ function getChooseBtnText(side) {
 defineExpose({
   regionAId,
   regionBId,
+  codeBlocksA,
+  codeBlocksB,
   resetChoice() {
     selectedSide.value = null
     choiceDisabled.value = false
