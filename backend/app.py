@@ -350,6 +350,10 @@ def call_ai_to_split(answer, max_lines):
         return []
 
 
+MIN_SPLIT_THRESHOLD = 2.0  # 回答超过max_lines 2倍才拆，避免过度拆分
+MAX_SUB_TASKS = 5  # 最多拆成5个子任务
+
+
 def recursive_split_answer(prompt, context_files, max_lines, depth=0):
     """递归拆分回答"""
     if depth > 3:
@@ -368,10 +372,17 @@ def recursive_split_answer(prompt, context_files, max_lines, depth=0):
     if estimated <= max_lines:
         return [answer]
 
+    # 未超过阈值，不拆分（避免简单问题被碎片化）
+    if estimated <= max_lines * MIN_SPLIT_THRESHOLD and depth == 0:
+        return [answer]
+
     sub_tasks = call_ai_to_split(text_a, max_lines)
 
     if not sub_tasks:
         return [answer]
+
+    # 限制子任务数量，防止过度拆分
+    sub_tasks = sub_tasks[:MAX_SUB_TASKS]
 
     results = []
     for task in sub_tasks:
