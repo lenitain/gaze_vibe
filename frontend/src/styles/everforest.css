@@ -36,7 +36,7 @@
   --statusline3: #e67e80;
 
   /* Font sizes - 1x scaled */
-  --font-scale: 1;
+  --font-scale: 0.7;
   --font-xs: calc(12px * var(--font-scale));
   --font-sm: calc(14px * var(--font-scale));
   --font-base: calc(15px * var(--font-scale));
