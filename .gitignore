@@ -3,3 +3,5 @@
 /backend/experiment_data.jsonl
 /docs/
 /.ruff_cache/
+/frontend/dist/
+/backend/__pycache__/
