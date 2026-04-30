@@ -8,8 +8,6 @@ import FileTree from './components/FileTree.vue'
 import FileViewer from './components/FileViewer.vue'
 import { FileIndexer } from './utils/fileIndexer.js'
 import { selectRelevantFiles, formatFilesForPrompt } from './utils/fileSelector.js'
-import { splitQuestion } from './utils/questionSplitter.js'
-import { mergeAnswers, createSegments } from './utils/answerMerger.js'
 import { parseCodeBlocks } from './utils/codeParser.js'
 
 const isEyeTracking = ref(false)
@@ -30,6 +28,8 @@ const answerALength = ref(0)
 const answerBLength = ref(0)
 const answerSegmentsA = ref([])
 const answerSegmentsB = ref([])
+const answerChunksA = ref([])
+const answerChunksB = ref([])
 const currentQuestion = ref('')
 const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
 const choiceSaved = ref(false)
@@ -106,12 +106,74 @@ async function handleFolderSelect(dirHandle) {
   }
 }
 
+function parseSSEStream(response) {
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  return {
+    async *[Symbol.asyncIterator]() {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop()
+        for (const part of parts) {
+          const lines = part.split('\n')
+          let event = ''
+          let data = ''
+          for (const line of lines) {
+            if (line.startsWith('event: ')) event = line.slice(7).trim()
+            if (line.startsWith('data: ')) data = line.slice(6)
+          }
+          if (event) yield { event, data: data ? JSON.parse(data) : null }
+        }
+      }
+    }
+  }
+}
+
+async function askV2SSE(prompt, contextFiles, eyeData) {
+  const viewportHeight = answerPanelRef.value?.contentHeight || 800
+  const response = await fetch('/api/ask-v2', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt,
+      contextFiles,
+      viewportHeight,
+      experimentMode: experimentMode.value,
+      eyeData
+    })
+  })
+  return response
+}
+
+async function askV1Fallback(prompt, contextFiles, eyeData) {
+  const response = await fetch('/api/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt,
+      contextFiles,
+      experimentMode: experimentMode.value,
+      eyeData
+    })
+  })
+  return response.json()
+}
+
 async function handleSubmit(prompt) {
   currentQuestion.value = prompt
   isLoading.value = true
   answerPanelRef.value?.resetChoice()
   answerSegmentsA.value = []
   answerSegmentsB.value = []
+  answerChunksA.value = []
+  answerChunksB.value = []
+  answerA.value = ''
+  answerB.value = ''
 
   try {
     const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
@@ -133,47 +195,48 @@ async function handleSubmit(prompt) {
       }
     }
 
-    const subQuestions = splitQuestion(prompt, contextFiles)
-
     let data
-    if (subQuestions.length > 1) {
-      const response = await fetch('/api/ask-batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subQuestions,
-          contextFiles,
-          experimentMode: experimentMode.value,
-          eyeData
-        })
-      })
-      data = await response.json()
+    let useSSE = false
 
-      if (data.results && data.results.length > 0) {
-        const merged = mergeAnswers(data.results)
-        answerA.value = merged.answerA
-        answerB.value = merged.answerB
-
-        const segments = createSegments(data.results)
-        answerSegmentsA.value = segments.segmentsA
-        answerSegmentsB.value = segments.segmentsB
+    try {
+      const response = await askV2SSE(prompt, contextFiles, eyeData)
+      if (response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
+        useSSE = true
+        const stream = parseSSEStream(response)
+        for await (const { event, data: chunkData } of stream) {
+          if (event === 'chunk') {
+            answerChunksA.value = [...answerChunksA.value, {
+              id: `chunk-${chunkData.index}`,
+              contextHint: chunkData.hint || null,
+              content: chunkData.answerA
+            }]
+            answerChunksB.value = [...answerChunksB.value, {
+              id: `chunk-${chunkData.index}`,
+              contextHint: chunkData.hint || null,
+              content: chunkData.answerB
+            }]
+            answerA.value = answerChunksA.value.map(c => c.content).join('\n\n')
+            answerB.value = answerChunksB.value.map(c => c.content).join('\n\n')
+          } else if (event === 'done') {
+            data = { answerA: answerA.value, answerB: answerB.value, ...chunkData }
+          }
+        }
+        if (answerChunksA.value.length > 1) {
+          answerSegmentsA.value = answerChunksA.value
+          answerSegmentsB.value = answerChunksB.value
+        }
       }
-    } else {
-      const response = await fetch('/api/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          contextFiles,
-          experimentMode: experimentMode.value,
-          eyeData
-        })
-      })
-      data = await response.json()
+    } catch (sseErr) {
+      console.warn('SSE failed, falling back to /api/ask:', sseErr)
+    }
+
+    if (!useSSE) {
+      data = await askV1Fallback(prompt, contextFiles, eyeData)
       answerA.value = data.answerA
       answerB.value = data.answerB
     }
 
+    if (!data) data = { answerA: answerA.value, answerB: answerB.value }
     answerALength.value = data.answerA?.length || 0
     answerBLength.value = data.answerB?.length || 0
 
@@ -350,6 +413,8 @@ function handleRegionSwitch({ from, to }) {
             :confidence="confidence"
             :answerSegmentsA="answerSegmentsA"
             :answerSegmentsB="answerSegmentsB"
+            :chunksA="answerChunksA"
+            :chunksB="answerChunksB"
             @choice="handleChoice"
           />
         </div>

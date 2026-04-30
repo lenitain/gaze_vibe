@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { parseCodeBlocks, extractFilePath, stripCodeBlocks, isFileApplicable } from '../utils/codeParser.js'
 
 const props = defineProps({
@@ -11,7 +11,9 @@ const props = defineProps({
   autoMode: Boolean,
   confidence: Number,
   answerSegmentsA: Array,
-  answerSegmentsB: Array
+  answerSegmentsB: Array,
+  chunksA: Array,
+  chunksB: Array
 })
 
 const emit = defineEmits(['choice'])
@@ -21,9 +23,31 @@ const choiceDisabled = ref(false)
 let autoSelected = false
 const overridden = ref(false)
 const effectiveAutoMode = computed(() => props.autoMode && !overridden.value)
+const contentHeight = ref(800)
+let resizeObserver = null
 
 const expandedA = ref(true)
 const expandedB = ref(true)
+
+const contentRef = ref(null)
+
+onMounted(() => {
+  const el = contentRef.value
+  if (!el) return
+  resizeObserver = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      contentHeight.value = entry.contentRect.height
+    }
+  })
+  resizeObserver.observe(el)
+})
+
+onUnmounted(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+})
 
 const displayTextA = computed(() => props.answerA ? answerTextA.value : '')
 
@@ -202,6 +226,7 @@ defineExpose({
   regionBId,
   codeBlocksA,
   codeBlocksB,
+  contentHeight,
   resetChoice() {
     selectedSide.value = null
     choiceDisabled.value = false
@@ -229,7 +254,7 @@ defineExpose({
         <span v-if="hasSegments && answerSegmentsA && answerSegmentsA.length > 1" class="segment-count">{{ answerSegmentsA.length }} 个片段</span>
         <span v-if="preferredSide === 'A' && !effectiveAutoMode" class="preference-hint">推断偏好</span>
       </div>
-      <div class="answer-content" :class="{ selected: selectedSide === 'A' }">
+      <div class="answer-content" ref="contentRef" :class="{ selected: selectedSide === 'A' }">
         <div v-if="isLoading" class="loading">
           <div class="spinner"></div>
           <span>生成中...</span>
@@ -499,7 +524,7 @@ defineExpose({
   padding: 12px;
   background: var(--bg0);
   border-top: 1px solid var(--bg3);
-  max-height: 300px;
+  max-height: 200px;
   overflow-y: auto;
 }
 
@@ -543,5 +568,40 @@ defineExpose({
 .choose-btn.selected:disabled {
   background: var(--green);
   color: var(--bg0);
+}
+
+.text-container {
+  padding: 12px 16px;
+}
+
+.segment-block {
+  animation: chunk-fade-in 0.4s ease-out;
+}
+
+.segment-block + .segment-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--bg3);
+}
+
+.segment-hint {
+  font-size: var(--font-xs);
+  color: var(--aqua);
+  padding: 4px 10px;
+  background: var(--bg-aqua);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  display: inline-block;
+}
+
+@keyframes chunk-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>
