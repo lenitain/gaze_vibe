@@ -214,17 +214,21 @@ async function handleChoice(side) {
     ? answerPanelRef.value?.codeBlocksA
     : answerPanelRef.value?.codeBlocksB
 
-  const writes = []
+  let writeResults = { ok: 0, fail: 0 }
   if (blocks) {
-    for (const block of blocks) {
-      if (block.filePath) {
-        writes.push(
-          fileIndexer.writeFile(block.filePath, block.code).catch(err =>
-            console.error(`Failed to write ${block.filePath}:`, err)
-          )
-        )
-      }
+    const results = await Promise.allSettled(
+      blocks.filter(b => b.filePath).map(b =>
+        fileIndexer.writeFile(b.filePath, b.code)
+      )
+    )
+    for (const r of results) {
+      r.status === 'fulfilled' ? writeResults.ok++ : writeResults.fail++
     }
+  }
+
+  if (writeResults.fail > 0) {
+    errorMessage.value = `${writeResults.fail} 个文件写入失败`
+    setTimeout(() => { errorMessage.value = '' }, 5000)
   }
 
   fetch('/api/preference', {
@@ -246,11 +250,6 @@ async function handleChoice(side) {
   }).catch(err => {
     console.error('Save preference failed:', err)
   })
-
-  await Promise.all(writes)
-  if (writes.length > 0) {
-    console.log(`Wrote ${writes.length} files to disk`)
-  }
 }
 
 function handleEyeData(data) {
