@@ -201,7 +201,7 @@ API 失败、文件写入失败仅在 console.log 输出，用户无感知。Dee
 
 ### Phase 10: 错误处理与健壮性
 
-1. API 失败时前端显示错误提示
+1. [x] API 失败时前端显示错误提示（红色 toast，auto-dismiss 5s）
 2. 文件写入失败时通知用户
 3. XSS 防护（DOMPurify 或 sanitize）
 

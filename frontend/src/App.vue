@@ -32,6 +32,7 @@ const answerSegmentsB = ref([])
 const currentQuestion = ref('')
 const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
 const choiceSaved = ref(false)
+const errorMessage = ref('')
 
 // Confidence inference
 const ALPHA = 0.3
@@ -143,7 +144,13 @@ async function handleSubmit(prompt) {
         eyeData
       })
     })
+    if (!response.ok) {
+      throw new Error(`API 请求失败: ${response.status}`)
+    }
     const data = await response.json()
+    if (!data.success) {
+      throw new Error(data.error || 'API 返回错误')
+    }
 
     answerA.value = data.answerA || ''
     answerB.value = data.answerB || ''
@@ -181,6 +188,8 @@ async function handleSubmit(prompt) {
     }
   } catch (err) {
     console.error('Error:', err)
+    errorMessage.value = err.message || '请求失败，请重试'
+    setTimeout(() => { errorMessage.value = '' }, 5000)
   } finally {
     isLoading.value = false
   }
@@ -352,6 +361,9 @@ function handleRegionSwitch({ from, to }) {
 
     <transition name="fade">
       <div v-if="choiceSaved" class="toast toast-pref">偏好已保存</div>
+    </transition>
+    <transition name="fade">
+      <div v-if="errorMessage" class="toast toast-error">{{ errorMessage }}</div>
     </transition>
   </div>
 </template>
@@ -566,6 +578,11 @@ function handleRegionSwitch({ from, to }) {
 
 .toast-pref {
   bottom: 130px;
+}
+
+.toast-error {
+  bottom: 90px;
+  background: var(--red);
 }
 
 .fade-enter-active,
