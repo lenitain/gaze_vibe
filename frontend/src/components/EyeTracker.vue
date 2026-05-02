@@ -59,16 +59,7 @@ function startDurationUpdate() {
   durationUpdateTimer = setInterval(() => {
     if (isTracking.value && regionStartTime) {
       const currentElapsed = Date.now() - regionStartTime
-      // 当 diff 打开时，显示 diffOpenSide 对应的时长
-      if (props.diffOpen && props.diffOpenSide) {
-        if (props.diffOpenSide === 'A') {
-          displayDuration.value = totalDurationA + currentElapsed + totalDurationB
-        } else {
-          displayDuration.value = totalDurationA + totalDurationB + currentElapsed
-        }
-      } else {
-        displayDuration.value = totalDurationA + totalDurationB + currentElapsed
-      }
+      displayDuration.value = totalDurationA + totalDurationB + currentElapsed
     } else {
       displayDuration.value = totalDurationA + totalDurationB
     }
