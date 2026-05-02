@@ -187,11 +187,11 @@ API 失败、文件写入失败仅在 console.log 输出，用户无感知。Dee
 
 或者简化：删除 AGENTS.md 中不存在的功能描述，保持当前直接写盘流程。
 
-### Phase 8: 修复眼动追踪数据 bug
+### Phase 8: 修复眼动追踪数据 bug ✅
 
-1. `calculateFinalAttention()` 改用 flush 间隔时长代替 `Date.now() - regionStartTime`
-2. 修复 `EyeTracker.vue:63-68` 无用条件分支
-3. 修复 region 切换三区问题
+1. [x] `calculateFinalAttention()` 只用最后 30% 时段的数据计算最终注视分布
+2. [x] 修复 `EyeTracker.vue:63-68` 无用条件分支
+3. [x] 修复 region 切换三区问题 — `getRegion()` 改为纯 50/50 分割，消除中间死区
 
 ### Phase 9: 同步文档与代码
 
