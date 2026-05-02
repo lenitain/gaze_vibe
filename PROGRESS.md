@@ -319,6 +319,7 @@ bug 修复：segment 内容应保留代码 fence（每个 segment 是完整 mark
   - [x] Phase 5a: 清理前端死代码（answerChunksA/B, 未用工具文件）
   - [x] Phase 5b: 编写测试脚本验证 split_user_question() — 4/4 测试通过（3-4 子问题/每次）
   - [x] Phase 5c: 修复 segments 模式重复代码块渲染，验证前端展示
+  - [x] Phase 5d: 删除死代码 — ask_batch() 路由, code_refactor.py
 
 ## 依赖
 

@@ -17,7 +17,6 @@ from flask_cors import CORS
 import openai
 
 from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
-from code_refactor import refactor_large_code, should_refactor
 
 load_dotenv()
 
@@ -323,65 +322,6 @@ def ask():
         "success": True,
         "experimentMode": experiment_mode,
     })
-
-
-@app.route("/api/ask-batch", methods=["POST"])
-def ask_batch():
-    """批量处理子问题"""
-    data = request.json
-    sub_questions = data.get("subQuestions", [])
-    context_files = data.get("contextFiles", [])
-    eye_data = data.get("eyeData")
-
-    if not sub_questions:
-        return jsonify({"error": "请提供子问题列表"}), 400
-
-    max_splits = 3
-    if len(sub_questions) > max_splits:
-        return jsonify({"error": f"最多支持 {max_splits} 个子问题"}), 400
-
-    results = []
-    prev_summary = None
-
-    for sq in sub_questions:
-        prompt = sq.get("prompt", "")
-        if prev_summary and sq.get("dependsOn"):
-            prompt = f"前一步结果摘要:\n{prev_summary}\n\n当前任务:\n{prompt}"
-
-        is_refactor = sq.get("isRefactor", False)
-        if is_refactor:
-            code_match = re.search(r"```\w*\n([\s\S]*?)```", prompt)
-            if code_match:
-                code_block = code_match.group(1)
-                if should_refactor(code_block):
-                    refactored = refactor_large_code(code_block, context_files)
-                    if refactored:
-                        results.append(
-                            {
-                                "id": sq.get("id", ""),
-                                "answerA": refactored,
-                                "answerB": refactored,
-                                "success": True,
-                            }
-                        )
-                        prev_summary = f"代码已重构为多个小函数"
-                        continue
-
-        result = generate_dual_answers(prompt, context_files, eye_data)
-        results.append(
-            {
-                "id": sq.get("id", ""),
-                "answerA": result.get("answerA", ""),
-                "answerB": result.get("answerB", ""),
-                "success": result.get("success", False),
-            }
-        )
-
-        if result.get("success"):
-            answer_text = result.get("answerB", result.get("answerA", ""))
-            prev_summary = answer_text[:200] + "..." if len(answer_text) > 200 else answer_text
-
-    return jsonify({"results": results, "success": True})
 
 
 @app.route("/api/preference", methods=["POST"])
