@@ -124,18 +124,7 @@ async function initWebGazer() {
 }
 
 function getRegion(x) {
-  const w = window.innerWidth
-  const third = w / 3
-
-  if (currentRegion.value === 'A') {
-    if (x > third * 2) return 'B'
-    return 'A'
-  }
-  if (currentRegion.value === 'B') {
-    if (x < third) return 'A'
-    return 'B'
-  }
-  return x < w / 2 ? 'A' : 'B'
+  return x < window.innerWidth / 2 ? 'A' : 'B'
 }
 
 function flushRegion() {
