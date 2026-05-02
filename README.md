@@ -40,28 +40,23 @@ gaze-vibe/
 │   │   ├── App.vue                      # 根组件，状态管理，实验模式切换
 │   │   ├── main.js
 │   │   ├── components/
-│   │   │   ├── AnswerPanel.vue          # 双答案面板 + 代码暂存 + 智能截断
+│   │   │   ├── AnswerPanel.vue          # 双答案面板
 │   │   │   ├── ChatInput.vue            # 输入框
-│   │   │   ├── DiffPreview.vue          # 修改预览弹窗
 │   │   │   ├── EyeTracker.vue           # WebGazer 眼动追踪
 │   │   │   ├── FolderSelector.vue       # 文件夹选择器
 │   │   │   ├── FileTree.vue             # 侧边栏文件树
 │   │   │   ├── FileTreeNode.vue         # 文件树节点
 │   │   │   └── FileViewer.vue           # 文件内容查看器
 │   │   ├── utils/
-│   │   │   ├── codeParser.js            # 代码块解析、文件路径提取、diff
+│   │   │   ├── codeParser.js            # 代码块解析、文件路径提取
 │   │   │   ├── fileIndexer.js           # File System Access API 目录扫描
-│   │   │   ├── fileSelector.js          # 关键词匹配选取相关文件
-│   │   │   ├── questionSplitter.js      # 问题分割（多文件/复杂度）
-│   │   │   ├── answerMerger.js          # 子问题答案合并
-│   │   │   └── answerSplitter.js        # 答案文本/代码分割
+│   │   │   └── fileSelector.js          # 关键词匹配选取相关文件
 │   │   └── styles/
 │   │       └── everforest.css           # Everforest 主题变量
 │   └── index.html
 ├── backend/
 │   ├── app.py                           # Flask 服务，DeepSeek API 调用
 │   ├── eye_tracker_processor.py         # 眼动数据处理器（EMA 平滑）
-│   ├── code_refactor.py                 # 大函数自动重构
 │   ├── experiment_data.jsonl            # 实验数据记录
 │   ├── .env                             # DEEPSEEK_API_KEY
 │   ├── run.sh                           # 一键启动脚本
@@ -70,9 +65,6 @@ gaze-vibe/
 │   ├── analyze_experiment.py            # 实验数据分析脚本
 │   ├── run.sh                           # 一键运行分析
 │   └── requirements.txt
-├── docs/
-│   ├── figures/                         # 分析图表 (SVG)
-│   └── superpowers/                     # 扩展功能规划
 ├── dev.sh                               # 开发环境一键启动
 ├── AGENTS.md                            # AI 助手指南
 ├── PROGRESS.md                          # 项目进度记录

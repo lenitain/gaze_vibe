@@ -196,7 +196,7 @@ API 失败、文件写入失败仅在 console.log 输出，用户无感知。Dee
 ### Phase 9: 同步文档与代码
 
 1. [x] 更新 AGENTS.md 与实际代码一致（Code Apply Workflow → Code Block Display, State 重写, 字体缩放修正）
-2. 删除 README 中已不存在的文件引用（questionSplitter.js, answerMerger.js, answerSplitter.js, code_refactor.py 等已删除的文件）
+2. [x] 删除 README 中已不存在的文件引用（questionSplitter.js, answerMerger.js, answerSplitter.js, code_refactor.py, DiffPreview.vue, docs/figures, docs/superpowers）
 3. 修复字体缩放代码或文档（AGENTS.md 已更新，CSS 中的 1x scaled 注释待修正）
 
 ### Phase 10: 错误处理与健壮性
