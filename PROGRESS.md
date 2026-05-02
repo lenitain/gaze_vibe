@@ -315,7 +315,7 @@ bug 修复：segment 内容应保留代码 fence（每个 segment 是完整 mark
 - [x] Phase 2: 删除旧递归拆分代码
 - [x] Phase 3: 前端简化（删除 SSE，调 `/api/ask`）
 - [x] Phase 4: 前端展示修复（segment 内容干净渲染）
-- [-] Phase 5: 验证 — 问题自动拆 2-4 轮，每轮短到不需滚动
+- [x] Phase 5: 验证 — 问题自动拆 2-4 轮，每轮短到不需滚动
   - [x] Phase 5a: 清理前端死代码（answerChunksA/B, 未用工具文件）
   - [x] Phase 5b: 编写测试脚本验证 split_user_question() — 4/4 测试通过（3-4 子问题/每次）
   - [x] Phase 5c: 修复 segments 模式重复代码块渲染，验证前端展示
