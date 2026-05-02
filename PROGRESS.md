@@ -153,9 +153,9 @@ else
 
 已修复：reset 移到 eyeData 捕获后立即执行，不再等 API 响应。
 
-### P3 - v-html XSS 风险
+### P3 - v-html XSS 风险 ✅
 
-AI 输出通过 `marked` 渲染后用 `v-html` 插入 DOM。理论上 AI 输出可能包含恶意 HTML。
+已修复：`renderMarkdown` 输出经 DOMPurify 净化。
 
 ### P3 - 无错误边界
 
@@ -203,7 +203,7 @@ API 失败、文件写入失败仅在 console.log 输出，用户无感知。Dee
 
 1. [x] API 失败时前端显示错误提示（红色 toast，auto-dismiss 5s）
 2. [x] 文件写入失败时通知用户（红色 toast，显示失败数量）
-3. XSS 防护（DOMPurify 或 sanitize）
+3. [x] XSS 防护（DOMPurify sanitize marked 输出）
 
 ---
 

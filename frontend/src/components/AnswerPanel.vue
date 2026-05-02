@@ -2,10 +2,11 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { parseCodeBlocks, extractFilePath, stripCodeBlocks, isFileApplicable } from '../utils/codeParser.js'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 function renderMarkdown(text) {
   if (!text) return ''
-  return marked.parse(text, { async: false })
+  return DOMPurify.sanitize(marked.parse(text, { async: false }))
 }
 
 const props = defineProps({
