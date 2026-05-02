@@ -1,6 +1,8 @@
-# PROGRESS: 多轮回答 - 一次提问，系统自动分多次回答
+# PROGRESS
 
-## 目标
+## 已完成：多轮回答重构
+
+### 目标
 
 眼动追踪场景。用户**问一次**，系统**自动回复多次**：
 - 第 1 次回答：覆盖问题的一个方面（短，不需滚动）
@@ -11,320 +13,223 @@
 
 这样每轮的眼动数据质量高（内容短，用户不滚动），且覆盖全面。
 
-## 问题：当前实现为什么不行
+### 历史：旧方案问题
 
-当前后端 `recursive_split_answer()` + `/api/ask-v2` SSE 的做法：
-
-```
-用户提问
-  │
-  ▼
-generate_single_answer() → 生成完整长回答（A/B 各一份）
-  │
-  ▼
-call_ai_to_split(完整回答) → 让 AI 把"已生成的回答"反向拆成子任务
-  │
-  ▼
-每个子任务 → 递归 generate_single_answer(子任务prompt) → 重新生成
-```
-
-三个致命缺陷：
+旧后端 `recursive_split_answer()` + `/api/ask-v2` SSE 做法三个致命缺陷：
 
 1. **拆的是回答，不是问题**：`call_ai_to_split()` 把 AI 刚写出来的代码喂给 AI，让 AI"反向工程"出子任务。AI 擅长写代码，不擅长拆自己写的答案。结果：JSON 格式失败、子任务重叠、遗漏内容。
+2. **先写全文再重写**：先生成了完整长回答（浪费 2 次 API），再拆成子任务重新生成（每子任务又 2 次 API）。5 子任务 = 13 次调用，且子任务之间不一致。
+3. **递归爆炸**：深度 3 层 + 每层 2 次 API + 每子任务可再递归。
 
-2. **先写全文再重写**：先生成了完整长回答（浪费 2 次 API），再拆成子任务重新生成（每子任务又 2 次 API）。5 子任务 = 13 次调用，且子任务之间不一致（因为重新生成的代码和原文不同）。
-
-3. **递归爆炸**：深度 3 层 + 每层 2 次 API + 每子任务可再递归 → 调用数的组合爆炸。
-
-## 方案：拆用户问题，不拆 AI 回答
-
-核心思路变了：
+### 正确方案：拆用户问题，不拆 AI 回答
 
 ```
 ❌ Plan A: 用户问题 → AI 生成完整回答 → AI 拆回答 → 重新生成每段
-✅ 正确做法: 用户问题 → AI 拆成子问题 → 对每个子问题生成回答（每轮回答都是独立生成的，互相一致）
+✅ 正确做法: 用户问题 → AI 拆成子问题 → 对每个子问题生成回答
 ```
 
-子问题是"规划"层面的东西——把"实现用户认证系统"拆成 ["创建 User 模型", "添加注册接口", "添加登录接口"]。AI 擅长这个（规划问题比拆答案简单得多）。
+后端 `split_user_question()` 用 DeepSeek 把用户问题拆成 2-4 个子问题，然后顺序生成每个子问题的 A/B 双答案，后一题携带前一题摘要作为上下文。
 
-### 流程
-
-```
-用户提问: "实现一个用户认证系统"
-  │
-  ▼
-后端 split_user_question()
-  │  调用 DeepSeek, 系统 prompt:
-  │  "把用户的编程问题拆成 2-4 个独立子问题,
-  │   每个子问题有明确的代码输出, 回答控制在 20 行内"
-  │
-  ├─ 子问题 1: "创建 User 模型 with email/password"
-  ├─ 子问题 2: "实现注册端点 with 输入验证"
-  ├─ 子问题 3: "实现登录端点 with JWT"
-  └─ 子问题 4: "添加密码重置流程"
-  │
-  ▼
-对每个子问题，generate_dual_answers(子问题, 上下文)
-  ├─ 子问题 1 → answerA_1, answerB_1
-  ├─ 子问题 2 → answerA_2, answerB_2  (带上前一步摘要)
-  ├─ 子问题 3 → answerA_3, answerB_3
-  └─ 子问题 4 → answerA_4, answerB_4
-  │
-  ▼
-通过 SSE 流式返回多个 chunk（保持 Plan A 的 SSE 格式不变）:
-  event: chunk → data: {index:0, total:4, answerA:"...", answerB:"...", hint:"User 模型"}
-  event: chunk → data: {index:1, total:4, answerA:"...", answerB:"...", hint:"注册接口"}
-  event: chunk → data: {index:2, total:4, answerA:"...", answerB:"...", hint:"登录接口"}
-  event: chunk → data: {index:3, total:4, answerA:"...", answerB:"...", hint:"密码重置"}
-  event: done → data: {success: true}
-  │
-  ▼
-前端逐轮展示（已有逻辑不变）:
-  chunk 到达 → push 到 answerChunksA/B
-  answerA.value = chunks 拼接
-  AnswerPanel 用 displaySegmentsA 渲染多个 segment-block
-  每轮有淡入动画
-```
-
-### 关键区别
-
-| | Plan A（递归 AI 拆分） | 正确做法 |
-|---|---|---|
-| 拆什么 | 拆 AI 生成的回答 | 拆用户的问题 |
-| 怎么拆 | `call_ai_to_split(answer)` — 让 AI 反推子任务 | `split_user_question(prompt)` — 让 AI 做规划 |
-| 子任务来源 | 从完整回答反向提取 | 从用户问题正向规划 |
-| 一致性 | 差（子任务是重新生成的，和原文不同） | 好（每个子问题独立生成但共享上下文） |
-| 成本 | 2(原始)+1(拆分)+2N(子任务) | 1(拆分)+2N(子任务) |
-| 递归 | 深度 3 层，可组合爆炸 | 无递归，扁平列表 |
-
-## 实现细节
-
-### backend/app.py 改动
-
-**新增函数**：
-```python
-def split_user_question(prompt, context_files, max_sub_questions=4):
-    """
-    把用户问题拆成多个子问题。
-
-    参数:
-        prompt: 用户原始问题
-        context_files: 项目文件上下文
-        max_sub_questions: 最多拆成几个子问题
-
-    返回:
-        [{id: str, prompt: str, contextHint: str, dependsOn: str}, ...]
-        失败时返回 None
-    """
-
-    split_system = """
-    你是一个任务规划助手。用户的编程问题需要从多个角度回答。
-    请将用户的问题拆成 2-{max} 个独立子问题。
-
-    要求:
-    1. 每个子问题专注一个具体方面
-    2. 每个子问题的 AI 回答应较短（不超过 20 行代码 + 5 行说明）
-    3. 子问题之间保持逻辑顺序
-    4. 不要遗漏重要方面
-    5. 每个子问题应该独立的、可回答的
-
-    输出 JSON 格式:
-    [
-      {{"id": "1", "prompt": "请实现...", "contextHint": "核心函数", "dependsOn": ""}},
-      {{"id": "2", "prompt": "请添加...", "contextHint": "边界处理", "dependsOn": "1"}}
-    ]
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": split_system},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.3,
-            max_tokens=2000,
-        )
-        raw = response.choices[0].message.content.strip()
-        json_match = re.search(r"\[[\s\S]*\]", raw)
-        if json_match:
-            return json.loads(json_match.group())[:max_sub_questions]
-        return None
-    except Exception as e:
-        print(f"问题拆分失败: {e}")
-        return None
-```
-
-**修改 `/api/ask`**：
-```python
-@app.route("/api/ask", methods=["POST"])
-def ask():
-    data = request.json
-    prompt = data.get("prompt", "")
-    context_files = data.get("contextFiles", [])
-    experiment_mode = data.get("experimentMode", "full")
-    eye_data = data.get("eyeData")
-
-    if not prompt:
-        return jsonify({"error": "请输入问题"}), 400
-
-    sub_questions = split_user_question(prompt, context_files)
-
-    # 不需要拆分 → 直接返回单个回答
-    if not sub_questions:
-        result = generate_dual_answers(prompt, context_files, eye_data)
-        result["experimentMode"] = experiment_mode
-        result["segments"] = []
-        return jsonify(result)
-
-    # 需要拆分 → 依次生成每个子问题
-    segments = []
-    prev_summary = None
-
-    for sq in sub_questions:
-        sub_prompt = sq["prompt"]
-        if prev_summary and sq.get("dependsOn"):
-            sub_prompt = f"上一步: {prev_summary}\n\n当前: {sub_prompt}"
-
-        # 携带上下文（原始问题 + 项目文件）
-        full_prompt = f"原始问题: {prompt}\n\n当前子任务: {sub_prompt}"
-        result = generate_dual_answers(full_prompt, context_files, eye_data)
-
-        segments.append({
-            "id": sq["id"],
-            "hint": sq.get("contextHint", ""),
-            "answerA": result.get("answerA", ""),
-            "answerB": result.get("answerB", ""),
-            "success": result.get("success", False),
-        })
-
-        if result.get("success"):
-            preview = result.get("answerB", result.get("answerA", ""))
-            prev_summary = preview[:200] + "..." if len(preview) > 200 else preview
-
-    # 也返回完整拼接
-    full_a = "\n\n---\n\n".join(s["answerA"] for s in segments if s["answerA"])
-    full_b = "\n\n---\n\n".join(s["answerB"] for s in segments if s["answerB"])
-
-    return jsonify({
-        "answerA": full_a,
-        "answerB": full_b,
-        "segments": segments,
-        "success": True,
-        "experimentMode": experiment_mode,
-    })
-```
-
-注意：如果 `sub_questions` 只有 1 个，或者拆分失败，退化为直接返回单次回答（`segments: []`，前端按旧逻辑渲染）。
-
-**删除内容**：
-- `recursive_split_answer()` — 不再递归
-- `call_ai_to_split()` — 不再拆 AI 回答
-- `MIN_SPLIT_THRESHOLD` — 不再需要
-- `MAX_SUB_TASKS` — 不再需要
-- `estimate_lines()` — 不再需要估算（每轮由 prompt 保证短）
-- `generate_single_answer()` — 不再需要（子问题用 generate_dual_answers）
-- `/api/ask-v2` 路由 — SSE 逻辑移到 `/api/ask` 内部
-
-### frontend/src/App.vue
-
-现有 SSE 接收逻辑基本可以复用，但做简化：
-
-- `handleSubmit` 只用 `/api/ask`
-- 如果返回 `segments.length > 0`，设 `answerSegmentsA/B` 为分段
-- 如果返回 `segments.length === 0`，按旧逻辑渲染单次回答
-- 删除 `answerChunksA/B` 独立数组（segments 代替）
-
-```js
-async function handleSubmit(prompt) {
-  currentQuestion.value = prompt
-  isLoading.value = true
-  answerPanelRef.value?.resetChoice()
-  answerA.value = ''
-  answerB.value = ''
-
-  try {
-    const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
-    const contextFiles = formatFilesForPrompt(relevantFiles)
-
-    let eyeData = null
-    // 眼动数据收集保持不变...
-
-    const response = await fetch('/api/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt, contextFiles,
-        experimentMode: experimentMode.value,
-        eyeData
-      })
-    })
-    const data = await response.json()
-
-    answerA.value = data.answerA || ''
-    answerB.value = data.answerB || ''
-
-    if (data.segments && data.segments.length > 1) {
-      answerSegmentsA.value = data.segments.map(s => ({
-        id: s.id, contextHint: s.hint, content: s.answerA
-      }))
-      answerSegmentsB.value = data.segments.map(s => ({
-        id: s.id, contextHint: s.hint, content: s.answerB
-      }))
-    }
-  } finally {
-    isLoading.value = false
-  }
-}
-```
-
-### frontend/src/components/AnswerPanel.vue
-
-保留两种渲染模式（已有）：
-
-1. **segments 模式**（`displaySegmentsA/B` 有值）→ 逐轮展示，每轮含 text + code blocks
-2. **flat 模式**（单次回答）→ 旧逻辑：stripCodeBlocks + codeBlocks 分离
-
-bug 修复：segment 内容应保留代码 fence（每个 segment 是完整 markdown），但需要干净渲染。当前问题在于 `v-html` 不能渲染 markdown。需要改用 markdown 渲染库（如 `marked`）或保留 code fence 解析。
-
-## 前端渲染修复
-
-当前 segments 用 `v-html` 渲染 seg.content（原始 markdown），结果代码 fence 以纯文本显示。修复：
-
-```
-选项 A: 轻量 markdown 渲染（如 marked.js）
-选项 B: segment 内容已经够短，后端保证短到可不渲染 markdown
-        直接用 <pre> 或 white-space: pre-wrap 展示
-选项 C: 每个 segment 再拆成 text/code block 子段
-```
-
-推荐选项 A 或 B（选项 C 太复杂）。选 A 的话加 `marked` 依赖。
-
-## 文件改动清单
-
-| 文件 | 改动 |
-|------|------|
-| `backend/app.py` | 新增 `split_user_question()`；删除 `recursive_split_answer()`, `call_ai_to_split()`, `MIN_SPLIT_THRESHOLD`, `MAX_SUB_TASKS`, `estimate_lines()`, `generate_single_answer()`, `/api/ask-v2`；修改 `/api/ask` 返回 segments |
-| `frontend/src/App.vue` | 删除 SSE 相关；`handleSubmit` 只用 `/api/ask`；segments → answerSegmentsA/B |
-| `frontend/src/components/AnswerPanel.vue` | 保留双模式；修复 seg.content 渲染（加 marked 或 pre-wrap） |
-| `frontend/package.json` | 可能加 `marked` 依赖 |
-
-## 里程碑
+### 已完成的里程碑
 
 - [x] Phase 1: 后端 `split_user_question()` 实现 + `/api/ask` 修改
 - [x] Phase 2: 删除旧递归拆分代码
 - [x] Phase 3: 前端简化（删除 SSE，调 `/api/ask`）
 - [x] Phase 4: 前端展示修复（segment 内容干净渲染）
-- [x] Phase 5: 验证 — 问题自动拆 2-4 轮，每轮短到不需滚动
-  - [x] Phase 5a: 清理前端死代码（answerChunksA/B, 未用工具文件）
-  - [x] Phase 5b: 编写测试脚本验证 split_user_question() — 4/4 测试通过（3-4 子问题/每次）
-  - [x] Phase 5c: 修复 segments 模式重复代码块渲染，验证前端展示
-  - [x] Phase 5d: 删除死代码 — ask_batch() 路由, code_refactor.py
+- [x] Phase 5: 验证 — 4/4 测试通过，死代码清理完毕
 
-## 依赖
+---
+
+## 当前项目状态（2026-05-02 审计）
+
+### 架构总览
 
 ```
-Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
+frontend/                          backend/
+  Vue 3 + Vite (plain JS)           Python Flask
+  port 5173                          port 8000
+  vite proxy /api/* → :8000
 ```
 
-Phase 2 可以和 Phase 1 一起做。Phase 4 需要等 Phase 3 确定 seg.content 格式。
+关键依赖：`vue 3.4`, `marked 15`, `webgazer`（前端）；`flask`, `openai`（后端）。
+
+### 核心数据流
+
+```
+用户提问 → App.vue.handleSubmit()
+  → selectRelevantFiles()（关键词匹配索引文件）
+  → POST /api/ask { prompt, contextFiles, eyeData }
+    → split_user_question()（DeepSeek 拆成子问题）
+    → 每个子问题 generate_dual_answers()（A/B 各一次 DeepSeek 调用）
+  ← { answerA, answerB, segments[], success }
+  → parseCodeBlocks() 提取代码块
+  → AnswerPanel 渲染 segments（多轮）或 flat（单次）
+  → WebGazer 追踪眼动 → userPreference 更新
+  → 用户点"选择此答案" → handleChoice(side)
+    → 写代码文件到磁盘
+    → POST /api/preference { preference, eyeMetrics }
+```
+
+### 文件结构
+
+```
+frontend/src/
+├── App.vue                    # 根组件，~580 行，状态管理中心
+├── components/
+│   ├── AnswerPanel.vue        # 双答案面板，~611 行
+│   ├── ChatInput.vue          # 输入框
+│   ├── DiffPreview.vue        # DIFF 预览弹窗（未使用/死代码）
+│   ├── EyeTracker.vue         # WebGazer 眼动追踪，~701 行
+│   ├── FileTree.vue           # 侧边栏文件树
+│   ├── FileTreeNode.vue       # 递归树节点
+│   ├── FileViewer.vue         # 文件内容查看器
+│   └── FolderSelector.vue     # 文件夹选择器
+├── utils/
+│   ├── codeParser.js          # 代码块解析、路径提取、diff
+│   ├── fileIndexer.js         # File System Access API 目录扫描
+│   └── fileSelector.js        # 关键词相关文件选择
+└── styles/
+    └── everforest.css         # CSS 变量（Everforest Dark Medium）
+
+backend/
+├── app.py                     # Flask 主服务，~438 行
+├── eye_tracker_processor.py   # 眼动数据处理 + EMA 建模，~472 行
+├── test_split.py              # split_user_question 测试
+└── requirements.txt           # flask, flask-cors, openai, python-dotenv
+```
+
+### 实验模式
+
+| mode | 眼动追踪 | 自动选择 | 说明 |
+|------|---------|---------|------|
+| full | 是 | 是 | 完整实验，置信度>=0.8 自动选 |
+| manual | 是 | 否 | 采集数据，用户手动选 |
+| control | 否 | 否 | 基线模式 |
+
+---
+
+## 已知 Bug（按优先级排序）
+
+### P0 - segments 与 code blocks 互斥（影响核心功能）
+
+`AnswerPanel.vue` 中 segments 模式和 code blocks 渲染互斥：
+```
+v-if="codeBlocksA.length > 0 && !displaySegmentsA"  （~line 287, 359）
+```
+
+分段回答模式下 `codeBlocksA` 完全隐藏，用户无法在分段回答中暂存/应用代码修改。这是 **Phase 5 没清理干净的遗留问题**——segment 内部的代码 fence 虽然渲染了，但没有走 codeParser 的路径提取和 staging 流程。
+
+### P0 - AGENTS.md 与实际代码严重脱节
+
+AGENTS.md 描述的 `fileChanges` Maps、`_stagedBy` 标记、暂存/取消/应用修改交互流程、DiffPreview 弹窗——**这些在代码中不存在**。实际 `AnswerPanel.vue` 只有「选择此答案」按钮直接写盘。
+
+**需要决定**：要么删文档匹配代码，要么实现文档描述的功能。
+
+### P1 - 眼动追踪数据累积错误
+
+`EyeTracker.vue:232-246` `calculateFinalAttention()` 中：
+```js
+elapsed = Date.now() - regionStartTime
+```
+`regionStartTime` 只设一次，每次 flush 时 `elapsed` 持续增长，导致 `totalFocus` 每次累加错误值。每个 flush 应该只加当次时长，而不是累计时长。
+
+### P1 - 无意义条件分支
+
+`EyeTracker.vue:63-68`：
+```js
+if (props.diffOpenSide === 'A')
+  displayDuration = totalDurationA + currentElapsed + totalDurationB
+else
+  displayDuration = totalDurationA + totalDurationB + currentElapsed
+```
+两个分支数学上完全等价，条件无意义。
+
+### P2 - 字体缩放与文档矛盾
+
+`everforest.css` 中 `--font-scale: 0.7` 实际缩小字体（xs=8.4px, base=10.5px），AGENTS.md 却说 "1.5x scaled"。要么改代码要么改文档。
+
+### P2 - region 切换三区问题
+
+`EyeTracker.vue` `getRegion()` 用 `w/3` 和 `w*2/3` 划分屏幕，但只映射 A/B 两个 region。中间出现停留区不触发切换，用户可能在中间区域看而系统不切换偏好。
+
+### P2 - 眼动数据提交时序
+
+`App.vue` 中 `timeOnA/timeOnB` 等数据在 API 响应到达后才 reset（`lines 172-175`）。快速连续提交时会携带上一轮的残留值。
+
+### P3 - v-html XSS 风险
+
+AI 输出通过 `marked` 渲染后用 `v-html` 插入 DOM。理论上 AI 输出可能包含恶意 HTML。
+
+### P3 - 无错误边界
+
+API 失败、文件写入失败仅在 console.log 输出，用户无感知。DeepSeek API 调用失败时 `split_user_question` 返回 `None` 退化为单次回答，前端不知道拆分失败。
+
+### P3 - FileTreeNode.vue 有 emoji
+
+违反 AGENTS.md "no emojis in code" 规则。
+
+### P3 - DiffPreview.vue 死代码
+
+`DiffPreview.vue` 存在于文件系统但从未被任何组件 import。
+
+---
+
+## 下一阶段开发计划
+
+### Phase 6: 修复 segments + code blocks 互斥
+
+目标：segments 模式下 code blocks 也能正常提取、显示和 staging。
+
+方案（推荐路径）：
+1. 每个 segment 内容独立走 `parseCodeBlocks()` 提取代码块
+2. 提取的代码块关联到对应的 segment，按 segment 分组展示
+3. `选择此答案` 能写入所有 segment 的代码块
+
+或者保持现有 flat 模式，不做 segments 展示，直接拼接所有子回答。
+
+### Phase 7: 正确实现 Code Apply Workflow
+
+根据 AGENTS.md 描述（或简化版）：
+1. 每个代码块有「暂存修改」按钮 → 弹出 DiffPreview
+2. DiffPreview 显示原始文件 vs 新代码的 diff
+3. 用户确认后文件写入磁盘
+4. 取消暂存可回滚
+
+或者简化：删除 AGENTS.md 中不存在的功能描述，保持当前直接写盘流程。
+
+### Phase 8: 修复眼动追踪数据 bug
+
+1. `calculateFinalAttention()` 改用 flush 间隔时长代替 `Date.now() - regionStartTime`
+2. 修复 `EyeTracker.vue:63-68` 无用条件分支
+3. 修复 region 切换三区问题
+
+### Phase 9: 同步文档与代码
+
+1. 更新 AGENTS.md 与实际代码一致
+2. 删除 README 中已不存在的文件引用
+3. 修复字体缩放代码或文档
+
+### Phase 10: 错误处理与健壮性
+
+1. API 失败时前端显示错误提示
+2. 文件写入失败时通知用户
+3. XSS 防护（DOMPurify 或 sanitize）
+
+---
+
+## 如何运行
+
+```bash
+# 前端
+cd frontend && bun install && bun run dev   # localhost:5173
+
+# 后端（使用现成 venv）
+backend/.venv/bin/python backend/app.py       # localhost:8000
+# 或
+cd backend && bash run.sh
+
+# 健康检查
+curl http://localhost:8000/api/health
+```
+
+后端没有 `pip`，使用 `uv` 或直接 `.venv/bin/python`。API 密钥在 `backend/.env`。
