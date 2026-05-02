@@ -133,6 +133,10 @@ async function handleSubmit(prompt) {
         answerBLength: answerBLength.value,
         ...eyeTrackerRef.value.getAllMetrics()
       }
+      userPreference.value.timeOnA = 0
+      userPreference.value.timeOnB = 0
+      userPreference.value.leftToRight = 0
+      userPreference.value.rightToLeft = 0
     }
 
     const response = await fetch('/api/ask', {
@@ -176,10 +180,6 @@ async function handleSubmit(prompt) {
       console.log('眼动调整结果:', data.eyeProcessing)
     }
 
-    userPreference.value.timeOnA = 0
-    userPreference.value.timeOnB = 0
-    userPreference.value.leftToRight = 0
-    userPreference.value.rightToLeft = 0
     decisionStartTime.value = Date.now()
 
     if (experimentMode.value !== 'control' && eyeTrackerRef.value) {

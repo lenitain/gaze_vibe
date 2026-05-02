@@ -149,9 +149,9 @@ else
 
 `EyeTracker.vue` `getRegion()` 用 `w/3` 和 `w*2/3` 划分屏幕，但只映射 A/B 两个 region。中间出现停留区不触发切换，用户可能在中间区域看而系统不切换偏好。
 
-### P2 - 眼动数据提交时序
+### P2 - 眼动数据提交时序 ✅
 
-`App.vue` 中 `timeOnA/timeOnB` 等数据在 API 响应到达后才 reset（`lines 172-175`）。快速连续提交时会携带上一轮的残留值。
+已修复：reset 移到 eyeData 捕获后立即执行，不再等 API 响应。
 
 ### P3 - v-html XSS 风险
 
