@@ -112,12 +112,9 @@ backend/
 
 ### P0 - segments 与 code blocks 互斥（影响核心功能）
 
-`AnswerPanel.vue` 中 segments 模式和 code blocks 渲染互斥：
-```
-v-if="codeBlocksA.length > 0 && !displaySegmentsA"  （~line 287, 359）
-```
+**已修复（Phase 6）**：删除了 `!displaySegmentsA` / `!displaySegmentsB` 守卫条件，code blocks 现在始终显示。
 
-分段回答模式下 `codeBlocksA` 完全隐藏，用户无法在分段回答中暂存/应用代码修改。这是 **Phase 5 没清理干净的遗留问题**——segment 内部的代码 fence 虽然渲染了，但没有走 codeParser 的路径提取和 staging 流程。
+视觉上 segment 内的 markdown 渲染和 `.code-blocks` 区可能有重复代码块，但后者提供了结构化文件路径标头，对「选择此答案」写盘流程有价值，属于可接受取舍。
 
 ### P0 - AGENTS.md 与实际代码严重脱节
 
@@ -176,16 +173,9 @@ API 失败、文件写入失败仅在 console.log 输出，用户无感知。Dee
 
 ## 下一阶段开发计划
 
-### Phase 6: 修复 segments + code blocks 互斥
+### Phase 6: 修复 segments + code blocks 互斥 ✅
 
-目标：segments 模式下 code blocks 也能正常提取、显示和 staging。
-
-方案（推荐路径）：
-1. 每个 segment 内容独立走 `parseCodeBlocks()` 提取代码块
-2. 提取的代码块关联到对应的 segment，按 segment 分组展示
-3. `选择此答案` 能写入所有 segment 的代码块
-
-或者保持现有 flat 模式，不做 segments 展示，直接拼接所有子回答。
+已修复：删除了 `!displaySegmentsA` / `!displaySegmentsB` 守卫条件。
 
 ### Phase 7: 正确实现 Code Apply Workflow
 

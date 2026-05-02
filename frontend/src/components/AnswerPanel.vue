@@ -284,7 +284,7 @@ defineExpose({
               </div>
             </template>
 
-            <div v-if="codeBlocksA.length > 0 && !displaySegmentsA" class="code-blocks">
+            <div v-if="codeBlocksA.length > 0" class="code-blocks">
               <div
                 v-for="block in codeBlocksA"
                 :key="block.blockId"
@@ -356,7 +356,7 @@ defineExpose({
               </div>
             </template>
 
-            <div v-if="codeBlocksB.length > 0 && !displaySegmentsB" class="code-blocks">
+            <div v-if="codeBlocksB.length > 0" class="code-blocks">
               <div
                 v-for="block in codeBlocksB"
                 :key="block.blockId"
