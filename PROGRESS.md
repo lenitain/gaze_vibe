@@ -311,10 +311,10 @@ bug 修复：segment 内容应保留代码 fence（每个 segment 是完整 mark
 
 ## 里程碑
 
-- [ ] Phase 1: 后端 `split_user_question()` 实现 + `/api/ask` 修改
-- [ ] Phase 2: 删除旧递归拆分代码
-- [ ] Phase 3: 前端简化（删除 SSE，调 `/api/ask`）
-- [ ] Phase 4: 前端展示修复（segment 内容干净渲染）
+- [x] Phase 1: 后端 `split_user_question()` 实现 + `/api/ask` 修改
+- [x] Phase 2: 删除旧递归拆分代码
+- [x] Phase 3: 前端简化（删除 SSE，调 `/api/ask`）
+- [x] Phase 4: 前端展示修复（segment 内容干净渲染）
 - [ ] Phase 5: 验证 — 问题自动拆 2-4 轮，每轮短到不需滚动
 
 ## 依赖

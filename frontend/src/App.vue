@@ -106,63 +106,6 @@ async function handleFolderSelect(dirHandle) {
   }
 }
 
-function parseSSEStream(response) {
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  return {
-    async *[Symbol.asyncIterator]() {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop()
-        for (const part of parts) {
-          const lines = part.split('\n')
-          let event = ''
-          let data = ''
-          for (const line of lines) {
-            if (line.startsWith('event: ')) event = line.slice(7).trim()
-            if (line.startsWith('data: ')) data = line.slice(6)
-          }
-          if (event) yield { event, data: data ? JSON.parse(data) : null }
-        }
-      }
-    }
-  }
-}
-
-async function askV2SSE(prompt, contextFiles, eyeData) {
-  const viewportHeight = answerPanelRef.value?.contentHeight || 800
-  const response = await fetch('/api/ask-v2', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      prompt,
-      contextFiles,
-      viewportHeight,
-      experimentMode: experimentMode.value,
-      eyeData
-    })
-  })
-  return response
-}
-
-async function askV1Fallback(prompt, contextFiles, eyeData) {
-  const response = await fetch('/api/ask', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      prompt,
-      contextFiles,
-      experimentMode: experimentMode.value,
-      eyeData
-    })
-  })
-  return response.json()
-}
 
 async function handleSubmit(prompt) {
   currentQuestion.value = prompt
@@ -183,7 +126,6 @@ async function handleSubmit(prompt) {
     if (eyeTrackerRef.value && isEyeTracking.value) {
       eyeTrackerRef.value.stopTracking()
       isEyeTracking.value = false
-
       eyeData = {
         timeOnA: userPreference.value.timeOnA,
         timeOnB: userPreference.value.timeOnB,
@@ -195,50 +137,30 @@ async function handleSubmit(prompt) {
       }
     }
 
-    let data
-    let useSSE = false
+    const response = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt, contextFiles,
+        experimentMode: experimentMode.value,
+        eyeData
+      })
+    })
+    const data = await response.json()
 
-    try {
-      const response = await askV2SSE(prompt, contextFiles, eyeData)
-      if (response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
-        useSSE = true
-        const stream = parseSSEStream(response)
-        for await (const { event, data: chunkData } of stream) {
-          if (event === 'chunk') {
-            answerChunksA.value = [...answerChunksA.value, {
-              id: `chunk-${chunkData.index}`,
-              contextHint: chunkData.hint || null,
-              content: chunkData.answerA
-            }]
-            answerChunksB.value = [...answerChunksB.value, {
-              id: `chunk-${chunkData.index}`,
-              contextHint: chunkData.hint || null,
-              content: chunkData.answerB
-            }]
-            answerA.value = answerChunksA.value.map(c => c.content).join('\n\n')
-            answerB.value = answerChunksB.value.map(c => c.content).join('\n\n')
-          } else if (event === 'done') {
-            data = { answerA: answerA.value, answerB: answerB.value, ...chunkData }
-          }
-        }
-        if (answerChunksA.value.length > 1) {
-          answerSegmentsA.value = answerChunksA.value
-          answerSegmentsB.value = answerChunksB.value
-        }
-      }
-    } catch (sseErr) {
-      console.warn('SSE failed, falling back to /api/ask:', sseErr)
-    }
-
-    if (!useSSE) {
-      data = await askV1Fallback(prompt, contextFiles, eyeData)
-      answerA.value = data.answerA
-      answerB.value = data.answerB
-    }
-
-    if (!data) data = { answerA: answerA.value, answerB: answerB.value }
+    answerA.value = data.answerA || ''
+    answerB.value = data.answerB || ''
     answerALength.value = data.answerA?.length || 0
     answerBLength.value = data.answerB?.length || 0
+
+    if (data.segments && data.segments.length > 1) {
+      answerSegmentsA.value = data.segments.map(s => ({
+        id: s.id, contextHint: s.hint, content: s.answerA
+      }))
+      answerSegmentsB.value = data.segments.map(s => ({
+        id: s.id, contextHint: s.hint, content: s.answerB
+      }))
+    }
 
     const blocksA = parseCodeBlocks(answerA.value || '')
     const blocksB = parseCodeBlocks(answerB.value || '')

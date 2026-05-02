@@ -1,6 +1,12 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { parseCodeBlocks, extractFilePath, stripCodeBlocks, isFileApplicable } from '../utils/codeParser.js'
+import { marked } from 'marked'
+
+function renderMarkdown(text) {
+  if (!text) return ''
+  return marked.parse(text, { async: false })
+}
 
 const props = defineProps({
   answerA: String,
@@ -270,7 +276,7 @@ defineExpose({
                   class="segment-block"
                 >
                   <div v-if="seg.contextHint" class="segment-hint">{{ seg.contextHint }}</div>
-                  <div class="answer-text" v-html="seg.content"></div>
+                  <div class="answer-text" v-html="renderMarkdown(seg.content)"></div>
                 </div>
               </div>
             </template>
@@ -342,7 +348,7 @@ defineExpose({
                   class="segment-block"
                 >
                   <div v-if="seg.contextHint" class="segment-hint">{{ seg.contextHint }}</div>
-                  <div class="answer-text" v-html="seg.content"></div>
+                  <div class="answer-text" v-html="renderMarkdown(seg.content)"></div>
                 </div>
               </div>
             </template>

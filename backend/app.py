@@ -12,7 +12,7 @@ import re
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import openai
 
@@ -217,190 +217,57 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
         }
 
 
-def estimate_lines(text):
-    """估算回答渲染行数，返回总渲染高度(px)，行高按17px算"""
-    if not text:
-        return 0
-    total_lines = 0
-    for match in re.finditer(r"```[^\n]*\n([\s\S]*?)```", text):
-        block = match.group(1)
-        total_lines += len(block.strip().split("\n")) + 2  # +2 for padding
-
-    # 处理代码块外的文本
-    parts = re.split(r"```[^\n]*\n[\s\S]*?```", text)
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        for line in part.split("\n"):
-            line = line.strip()
-            if not line:
-                total_lines += 1
-                continue
-            # 中文按35字/行，英文按80字/行
-            cn_chars = len(re.findall(r"[\u4e00-\u9fff]", line))
-            en_chars = len(line) - cn_chars
-            cn_lines = max(1, -(-cn_chars // 35))  # ceil division
-            en_lines = max(1, -(-en_chars // 80))
-            total_lines += max(cn_lines, en_lines)
-
-    return total_lines * 17
-
-
-def generate_single_answer(prompt, context_files=None):
-    """单次调用，返回 {answerA, answerB, success}"""
-    system_a = """你是一个注重代码可读性的编程导师。
-请输出**注释丰富、讲解详细**的代码：
-- 代码中每个关键步骤都添加中文注释，说明为何这样写
-- 处理边界情况和错误
-- 代码结构清晰，变量命名语义化
-- 代码块前给出一两句话的简要说明即可，不要在代码外长篇大论
-重点在代码质量，而非文字篇幅。
-每次回答代码不超过15行，说明文字不超过3行"""
-
-    system_b = """你是一个追求代码简洁性的编程助手。
-请输出**精简干练、无注释**的代码：
-- 代码中不写注释，用自解释的变量名和函数名
-- 用最短的路径实现功能，合并可简化的逻辑
-- 不处理非必要的边缘情况
-- 代码块前给出一句话说明即可
-重点在代码精简，而非文字篇幅。
-每次回答代码不超过15行，说明文字不超过3行"""
-
+def split_user_question(prompt, context_files, max_sub_questions=4):
+    """
+    把用户问题拆成多个子问题。
+    返回 [{id: str, prompt: str, contextHint: str, dependsOn: str}, ...]
+    失败时返回 None
+    """
+    context_text = ""
     if context_files:
-        context_text = "\n\n## 项目文件上下文\n\n"
-        for file in context_files:
-            context_text += f"### {file['path']}\n\n```{file.get('lang', '')}\n{file['content']}\n```\n\n"
-        context_text += "请基于以上项目代码上下文回答用户的问题。\n"
-        system_a += context_text
-        system_b += context_text
+        for f in context_files:
+            context_text += f"\n文件 {f['path']}:\n{f['content']}\n"
 
-    try:
-        response_a = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": system_a},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
-            max_tokens=1200,
-        )
-        answer_a = response_a.choices[0].message.content
+    split_system = f"""你是一个任务规划助手。用户的编程问题需要从多个角度回答。
+请将用户的问题拆成 2-{max_sub_questions} 个独立子问题。
 
-        response_b = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": system_b},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
-            max_tokens=1200,
-        )
-        answer_b = response_b.choices[0].message.content
+要求:
+1. 每个子问题专注一个具体方面
+2. 每个子问题的 AI 回答应较短（不超过 20 行代码 + 5 行说明）
+3. 子问题之间保持逻辑顺序
+4. 不要遗漏重要方面
+5. 每个子问题应该是独立的、可回答的
+6. 用中文输出 contextHint
 
-        return {"answerA": answer_a, "answerB": answer_b, "success": True}
-    except Exception as e:
-        return {
-            "answerA": f"生成失败: {str(e)}",
-            "answerB": f"生成失败: {str(e)}",
-            "success": False,
-            "error": str(e),
-        }
-
-
-def call_ai_to_split(answer, max_lines):
-    """调AI把长回答拆成子任务"""
-    max_code_lines = max(5, int(max_lines * 0.6))
-    max_text_lines = max(3, int(max_lines * 0.4))
-
-    split_system = f"""你是一个任务拆分助手。以下是一个编程问题的完整回答，但它太长了。
-请将其拆分成多个独立的小任务，使得每个小任务的AI回答都能控制在指定行数内。
-
-要求：
-1. 每个小任务独立可答，有明确的代码输出
-2. 小任务之间如果有依赖，标记 dependsOn
-3. 每个任务的回答不超过 {max_code_lines} 行代码 + {max_text_lines} 行说明文字
-4. 保持原回答的完整性，不要遗漏内容
-
-输出JSON格式：
+输出 JSON 格式（只输出 JSON，不要其他文字）:
 [
   {{"id": "1", "prompt": "请实现...", "contextHint": "核心函数", "dependsOn": ""}},
   {{"id": "2", "prompt": "请添加...", "contextHint": "边界处理", "dependsOn": "1"}}
 ]"""
 
     try:
+        full_prompt = prompt
+        if context_text:
+            full_prompt = f"项目上下文:\n{context_text}\n\n用户问题:\n{prompt}"
+
         response = client.chat.completions.create(
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": split_system},
-                {"role": "user", "content": f"请拆分以下回答：\n\n{answer}"},
+                {"role": "user", "content": full_prompt},
             ],
             temperature=0.3,
-            max_tokens=3000,
+            max_tokens=2000,
         )
         raw = response.choices[0].message.content.strip()
-        # 提取JSON
         json_match = re.search(r"\[[\s\S]*\]", raw)
         if json_match:
-            tasks = json.loads(json_match.group())
-            return tasks
-        return []
+            result = json.loads(json_match.group())
+            return result[:max_sub_questions]
+        return None
     except Exception as e:
-        print(f"拆分失败: {e}")
-        return []
-
-
-MIN_SPLIT_THRESHOLD = 2.0  # 回答超过max_lines 2倍才拆，避免过度拆分
-MAX_SUB_TASKS = 5  # 最多拆成5个子任务
-
-
-def recursive_split_answer(prompt, context_files, max_lines, depth=0):
-    """递归拆分回答"""
-    if depth > 3:
-        return [generate_single_answer(prompt, context_files)]
-
-    answer = generate_single_answer(prompt, context_files)
-
-    if not answer.get("success"):
-        return [answer]
-
-    # 取较长的回答估算
-    text_a = answer.get("answerA", "")
-    text_b = answer.get("answerB", "")
-    estimated = max(estimate_lines(text_a), estimate_lines(text_b))
-
-    if estimated <= max_lines:
-        return [answer]
-
-    # 未超过阈值，不拆分（避免简单问题被碎片化）
-    if estimated <= max_lines * MIN_SPLIT_THRESHOLD and depth == 0:
-        return [answer]
-
-    sub_tasks = call_ai_to_split(text_a, max_lines)
-
-    if not sub_tasks:
-        return [answer]
-
-    # 限制子任务数量，防止过度拆分
-    sub_tasks = sub_tasks[:MAX_SUB_TASKS]
-
-    results = []
-    for task in sub_tasks:
-        sub_prompt = task.get("prompt", "")
-        depends_on = task.get("dependsOn", "")
-        if depends_on and results:
-            last_answer = results[-1].get("answerA", "")
-            summary = last_answer[:200] + "..." if len(last_answer) > 200 else last_answer
-            sub_prompt = f"前一步结果摘要:\n{summary}\n\n当前任务:\n{sub_prompt}"
-
-        sub_results = recursive_split_answer(
-            sub_prompt, context_files, max_lines, depth + 1
-        )
-        for sr in sub_results:
-            sr["hint"] = task.get("contextHint", "")
-        results.extend(sub_results)
-
-    return results
+        print(f"问题拆分失败: {e}")
+        return None
 
 
 @app.route("/api/ask", methods=["POST"])
@@ -410,16 +277,52 @@ def ask():
     prompt = data.get("prompt", "")
     context_files = data.get("contextFiles", [])
     experiment_mode = data.get("experimentMode", "full")
-    eye_data = data.get("eyeData")  # 新增：眼动数据
+    eye_data = data.get("eyeData")
 
     if not prompt:
         return jsonify({"error": "请输入问题"}), 400
 
-    # 生成答案 (包含眼动数据处理)
-    result = generate_dual_answers(prompt, context_files, eye_data)
-    result["experimentMode"] = experiment_mode
+    sub_questions = split_user_question(prompt, context_files)
 
-    return jsonify(result)
+    if not sub_questions or len(sub_questions) <= 1:
+        result = generate_dual_answers(prompt, context_files, eye_data)
+        result["experimentMode"] = experiment_mode
+        result["segments"] = []
+        return jsonify(result)
+
+    segments = []
+    prev_summary = None
+
+    for sq in sub_questions:
+        sub_prompt = sq["prompt"]
+        if prev_summary and sq.get("dependsOn"):
+            sub_prompt = f"上一步: {prev_summary}\n\n当前: {sub_prompt}"
+
+        full_prompt = f"原始问题: {prompt}\n\n当前子任务: {sub_prompt}"
+        result = generate_dual_answers(full_prompt, context_files, eye_data)
+
+        segments.append({
+            "id": sq["id"],
+            "hint": sq.get("contextHint", ""),
+            "answerA": result.get("answerA", ""),
+            "answerB": result.get("answerB", ""),
+            "success": result.get("success", False),
+        })
+
+        if result.get("success"):
+            preview = result.get("answerB", result.get("answerA", ""))
+            prev_summary = preview[:200] + "..." if len(preview) > 200 else preview
+
+    full_a = "\n\n---\n\n".join(s["answerA"] for s in segments if s["answerA"])
+    full_b = "\n\n---\n\n".join(s["answerB"] for s in segments if s["answerB"])
+
+    return jsonify({
+        "answerA": full_a,
+        "answerB": full_b,
+        "segments": segments,
+        "success": True,
+        "experimentMode": experiment_mode,
+    })
 
 
 @app.route("/api/ask-batch", methods=["POST"])
@@ -479,51 +382,6 @@ def ask_batch():
             prev_summary = answer_text[:200] + "..." if len(answer_text) > 200 else answer_text
 
     return jsonify({"results": results, "success": True})
-
-
-@app.route("/api/ask-v2", methods=["POST"])
-def ask_v2():
-    """递归拆分 + SSE 流式返回"""
-    data = request.json
-    prompt = data.get("prompt", "")
-    context_files = data.get("contextFiles", [])
-    viewport_height = data.get("viewportHeight", 600)
-
-    if not prompt:
-        return jsonify({"error": "请输入问题"}), 400
-
-    max_lines = max(5, int(viewport_height / 17))
-
-    def generate():
-        try:
-            sub_results = recursive_split_answer(prompt, context_files, max_lines)
-            total = len(sub_results)
-
-            for i, result in enumerate(sub_results):
-                chunk = {
-                    "index": i,
-                    "total": total,
-                    "answerA": result.get("answerA", ""),
-                    "answerB": result.get("answerB", ""),
-                    "hint": result.get("hint", ""),
-                }
-                yield f"event: chunk\ndata: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-
-            yield f"event: done\ndata: {json.dumps({'success': True})}\n\n"
-
-        except Exception as e:
-            error_data = {"success": False, "error": str(e)}
-            yield f"event: done\ndata: {json.dumps(error_data)}\n\n"
-
-    return Response(
-        generate(),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
 
 
 @app.route("/api/preference", methods=["POST"])
