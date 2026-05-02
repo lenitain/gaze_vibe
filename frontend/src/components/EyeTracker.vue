@@ -109,6 +109,7 @@ let decisionLatency = ref(0)
 let explorationRatio = ref(0)
 let finalAttentionFocus = ref({ A: 0, B: 0 })
 let tauHistory = []
+let gazeTimeline = []
 
 async function initWebGazer() {
   if (typeof window.webgazer === 'undefined') {
@@ -232,16 +233,12 @@ function calculateExplorationRatio() {
 function calculateFinalAttention() {
   const now = Date.now()
   const elapsed = now - regionStartTime
-  const totalSession = now - trackingStartTime
-  
-  // 计算最后30%时间的注视分布
-  if (totalSession > 0 && currentRegion.value) {
-    const finalDuration = elapsed
-    if (currentRegion.value === 'A') {
-      finalAttentionFocus.value.A += finalDuration
-    } else {
-      finalAttentionFocus.value.B += finalDuration
-    }
+  if (elapsed > 0 && currentRegion.value) {
+    gazeTimeline.push({
+      region: currentRegion.value,
+      duration: elapsed,
+      startTime: now - elapsed
+    })
   }
 }
 
@@ -415,6 +412,7 @@ async function startTracking() {
     // 重置注意力动力学指标
     explorationRatio.value = 0
     finalAttentionFocus.value = { A: 0, B: 0 }
+    gazeTimeline = []
     tauHistory = []
 
     // 重置显示时长
@@ -469,6 +467,28 @@ function stopTracking() {
 }
 
 function getAllMetrics() {
+  // 计算最后30%时间的注视分布
+  if (gazeTimeline.length > 0) {
+    const totalTimeline = gazeTimeline.reduce((s, e) => s + e.duration, 0)
+    if (totalTimeline > 0) {
+      const last30pct = totalTimeline * 0.3
+      let accumulated = 0, finalA = 0, finalB = 0
+      for (let i = gazeTimeline.length - 1; i >= 0 && accumulated < last30pct; i--) {
+        const entry = gazeTimeline[i]
+        const remaining = last30pct - accumulated
+        const contribution = Math.min(entry.duration, remaining)
+        if (entry.region === 'A') finalA += contribution
+        else finalB += contribution
+        accumulated += contribution
+      }
+      finalAttentionFocus.value = { A: finalA, B: finalB }
+    } else {
+      finalAttentionFocus.value = { A: 0, B: 0 }
+    }
+  } else {
+    finalAttentionFocus.value = { A: 0, B: 0 }
+  }
+
   return {
     // 信息熵
     tau: tau.value,
