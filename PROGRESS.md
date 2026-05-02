@@ -1,234 +1,261 @@
-# PROGRESS: 递归分片 - 自动多次回复，无需滚动条
-
-## 状态：已实现（待测试验证）
+# PROGRESS: 回答分割 Plan B - 后端规则切分 + 前端干净展示
 
 ## 目标
 
-眼动追踪场景，用户问一次，系统**自动**多次回复，每次回答短到不需要滚动条。用户全程只看，零交互。
+眼动追踪场景，用户问一次，每次回答短到不需要滚动条。用户全程只看，零交互。
 
-## 核心流程：递归拆分
+核心思路：后端用**规则**（非递归 AI）切分回答 → 前端展示分段列表。
 
-```
-用户提问
-  │
-  ▼
-AI生成完整回答
-  │
-  ├─ 回答够短（能放进面板）→ 直接展示给用户 ✓
-  │
-  └─ 回答太长 → 调AI把回答拆成子任务
-                   │
-                   ├─ 子任务1 → AI生成回答 → 检查长短
-                   │              ├─ 够短 → 展示 ✓
-                   │              └─ 太长 → 再拆（递归）
-                   │
-                   ├─ 子任务2 → 同上
-                   │
-                   └─ 子任务3 → 同上
-```
-
-终止条件：每个回答渲染后不超出 `.answer-content` 可用高度。
-
-## "多小"的判定标准
-
-根据前端实际 CSS 计算（`--font-scale: 0.7`）：
-
-| 元素 | 实际字号 | 行高 |
-|------|----------|------|
-| 正文 `--font-base` | 10.5px | ~17px |
-| 代码 `--font-xs` | 8.4px | ~13px |
-
-`.answer-content` 可用高度 = `.answer-col` 高度 - header(34px) - chooseBtn(60px)
-
-| 视口高度 | .answer-col | .answer-content | 可容文本行 | 可容代码行 |
-|----------|-------------|-----------------|------------|------------|
-| 900px | ~640px | ~606px | ~35行 | ~46行 |
-| 700px | ~440px | ~406px | ~23行 | ~31行 |
-| 500px（极端） | ~240px | ~206px | ~12行 | ~15行 |
-
-**判定规则**：估算渲染高度 > `.answer-content` 高度 → 需要拆分
-
-另外，`.block-code` 有 `max-height: 300px; overflow-y: auto`，**单个代码块也不能超过300px**（≈23行代码）。这个也要纳入检查。
-
-## 当前问题
-
-1. `questionSplitter.js` 切用户输入，不管输出长度
-2. `code_refactor.py` 重构用户代码，和回答长度无关
-3. 前端截断是视觉遮盖
-4. 无递归拆分机制
-
----
-
-## Phase 规划
-
-### Phase 1: 后端 - 递归拆分引擎
-
-**文件**: `backend/app.py`
-
-新增函数 `recursive_split_answer(prompt, context_files, max_lines, depth=0)`:
+## 当前架构（Plan A: 递归 AI 拆分）
 
 ```
-def recursive_split_answer(prompt, context_files, max_lines, depth=0):
-    if depth > 3:  # 防止无限递归
-        return [generate_single_answer(prompt, context_files)]
+后端 /api/ask-v2 (SSE):
+  recursive_split_answer()
+    1. generate_single_answer()  → 2 次 DeepSeek 调用 (A/B)
+    2. estimate_lines() 估算渲染高度
+    3. 太长 → call_ai_to_split() → 再调 DeepSeek 把回答拆成子任务 JSON
+    4. 每个子任务 → 递归回到步骤 1（最多深度 3 层，每层 2 次 API）
 
-    answer = generate_single_answer(prompt, context_files)
+前端 App.vue:
+  - 接收 SSE chunk 流
+  - answerChunksA/B 存每个 chunk
+  - 拼成 answerA/B 完整文本
+  - 同时设 answerSegmentsA/B = chunks（>1 个时）
 
-    if estimate_lines(answer) <= max_lines:
-        return [answer]  # 够短，直接返回
-
-    # 太长，调AI拆成子任务
-    sub_tasks = call_ai_to_split(answer, max_lines)
-
-    results = []
-    for task in sub_tasks:
-        # 递归：对每个子任务再生成回答，再检查
-        sub_results = recursive_split_answer(
-            task["prompt"], context_files, max_lines, depth + 1
-        )
-        results.extend(sub_results)
-
-    return results
+前端 AnswerPanel.vue:
+  - 有 segments → 遍历 segments, v-html seg.content（原始 markdown）
+  - 下面又渲染 codeBlocksA（从完整 answerA 解析）
+  - 无 segments → stripCodeBlocks + codeBlocks 分开
 ```
 
-关键子函数：
+当前状态：（自测）功能实现但效果差。
 
-**`estimate_lines(answer_text)`**: 估算回答渲染行数
-- 文本部分：按中文35字/行、英文80字/行折算
-- 代码块：直接取代码行数 + padding
-- 综合返回总渲染高度(px)
+## 已发现问题
 
-**`call_ai_to_split(answer, max_lines)`**: 调AI把长回答拆成子任务
-- system prompt: "把以下回答拆成多个独立的小步骤，每个步骤的AI回答不超过N行代码+M行文字。输出JSON数组。"
-- 返回 `[{prompt, contextHint}, ...]`
+### 1. 递归拆分几乎不触发，触发了效果也差
 
-**新增接口 `/api/ask-v2`**:
-- 接收 `{prompt, contextFiles, viewportHeight}`（前端传面板高度）
-- `max_lines = viewportHeight / 17`（按文本行高算）
-- 调用 `recursive_split_answer`
-- 用 SSE 流式返回每个子结果
+- `max_lines = viewportHeight / 17`（700px 视口 → 41 行）
+- `MIN_SPLIT_THRESHOLD = 2.0` → 82 行才触发拆分
+- 系统 prompt 说"不超过 15 行代码 + 3 行文字"，但 AI 不遵守约束，常输出 50-200 行
+- `call_ai_to_split` 用 AI 拆分 AI 回答 → 不稳定（JSON 格式可能失败、子任务重叠/遗漏）
+- 子任务"重新生成"而非"切分原回答" → 丢失上下文、不一致、每子任务 2 次 API
 
-**SSE 流式格式**:
-```
-event: chunk
-data: {"index": 0, "total": 3, "answerA": "...short...", "answerB": "...short...", "hint": "核心实现"}
+### 2. API 成本爆炸
 
-event: chunk
-data: {"index": 1, "total": 3, "answerA": "...short...", "answerB": "...short...", "hint": "边界处理"}
+5 子任务 = 2(原始) + 1(拆分) + 10(子任务重新生成) = 13 次 DeepSeek 调用
 
-event: chunk
-data: {"index": 2, "total": 3, "answerA": "...short...", "answerB": "...short...", "hint": "测试用例"}
+### 3. Segment 展示 Bug
 
-event: done
-data: {"success": true}
+```html
+<!-- segment 模式：v-html 展示原始 markdown（代码 fence ``` 当纯文本显示） -->
+<div class="answer-text" v-html="seg.content"></div>
+<!-- 下面又解析了一次代码块，用户看到两遍 -->
+<div v-if="codeBlocksA.length > 0" class="code-blocks">...</div>
 ```
 
-**拆分用 system prompt**:
+### 4. estimate_lines 不准确
+
+只算行数 × 17px，忽略:
+- answer-header (34px)
+- choose-btn (~60px)
+- `.block-code` 的 padding (24px)
+- segment-block 之间的 border/margin
+
+## Plan B: 后端规则切分
+
+去掉 AI 递归拆分，改为纯规则切分。不重新生成，只拆分已有回答。
+
+### 核心流程
+
 ```
-你是一个任务拆分助手。以下是一个编程问题的完整回答，但它太长了。
-请将其拆分成多个独立的小任务，使得每个小任务的AI回答都能控制在指定行数内。
+后端 /api/ask:
+  1. generate_dual_answers()  → 2 次 DeepSeek 调用 (A/B)
+  2. split_answer(answer_text, max_lines) → 规则切分每个回答
+  3. 返回 {answerA, answerB, segmentsA, segmentsB}
+      - answerA/B = 原始完整文本（向后兼容）
+      - segmentsA/B = [{type:'text',content}, {type:'code',lang,content}, ...]
 
-要求：
-1. 每个小任务独立可答，有明确的代码输出
-2. 小任务之间如果有依赖，标记 dependsOn
-3. 每个任务的回答不超过 {max_code_lines} 行代码 + {max_text_lines} 行说明文字
-4. 保持原回答的完整性，不要遗漏内容
-
-输出JSON格式：
-[
-  {"id": "1", "prompt": "请实现...", "contextHint": "核心函数", "dependsOn": ""},
-  {"id": "2", "prompt": "请添加...", "contextHint": "边界处理", "dependsOn": "1"}
-]
+前端 AnswerPanel.vue:
+  - 有 segments → 渲染分段列表
+     - text 段：纯文本（不含代码 fence）
+     - code 段：代码卡片
+  - 无 segments → flat 模式（stripCodeBlocks + codeBlocks）
+  - 不重复，不交叉
 ```
 
-**验收**:
-- 简单问题（10行回答）→ 不拆分，1个chunk
-- 中等问题（40行回答）→ 拆成2个chunk
-- 复杂问题（100行回答）→ 递归拆成3-5个chunk
-- 每个chunk渲染后不超出面板高度
+### 切分规则（`split_answer`）
 
----
+```
+输入: answer_text (原始 markdown 字符串)
+输出: segment[{type, content, lang?, code?}]
 
-### Phase 2: 后端 - prompt长度约束
+步骤:
+1. 正则 /```(\w*)\s*\n([\s\S]*?)```/g 提取所有代码块
+2. 在代码块之间 = 文本片（strip 代码 fence 后纯文本）
+3. 遍历所有文本片和代码块，交替输出 segments
+4. 文本片太长（>max_lines）→ 按双换行切分子段
+5. max_lines = viewportHeight / 17 - 2（预留 header/button 空间）
+```
 
-**文件**: `backend/app.py`
+### 移除内容
 
-- `system_a` / `system_b` 添加硬性长度指令
-  - `"每次回答代码不超过15行，说明文字不超过3行"`
-- `max_tokens` 从 3000 降到 1200（子任务回答更短）
-- `generate_single_answer` 接受 `max_tokens` 参数，子任务调用时传更小值
+- 删除: `recursive_split_answer()`, `call_ai_to_split()`, `MIN_SPLIT_THRESHOLD`, `MAX_SUB_TASKS`
+- 删除: `/api/ask-v2` SSE 端点
+- 删除: `generate_single_answer()`（不再需要独立单次生成）
+- 删除: 前端 `answerChunksA/B`、`answerSegmentsA/B` SSE 接收逻辑
 
-**验收**: 单次AI回答的代码块不超过15行
+## 文件改动
 
----
+### backend/app.py
 
-### Phase 3: 前端 - 接收分片 + 自动展示
+| 改动 | 说明 |
+|------|------|
+| 删除 `recursive_split_answer()` | 不再递归 |
+| 删除 `call_ai_to_split()` | 不再用 AI 拆分 |
+| 删除 `MIN_SPLIT_THRESHOLD`, `MAX_SUB_TASKS` | 不再需要 |
+| 删除 `generate_single_answer()` | `/api/ask-v2` 专用，也将删除 |
+| 删除 `/api/ask-v2` 路由 | SSE 端点移除 |
+| 新增 `split_answer_into_segments(text, max_lines)` | 规则切分 |
+| 改进 `estimate_lines()` | 更准确估算渲染高度 |
+| 修改 `/api/ask` | 返回增加 `segmentsA`/`segmentsB` 字段 |
 
-**文件**: `frontend/src/App.vue`, `frontend/src/components/AnswerPanel.vue`
+**`split_answer_into_segments` 签名**:
+```python
+def split_answer_into_segments(text, max_lines):
+    """
+    规则切分回答为 segments 列表。
 
-`App.vue` 改动:
-- `handleSubmit` 改用 `/api/ask-v2`
-- 传 `viewportHeight` 给后端（从 AnswerPanel 获取）
-- 用 `fetch` + `ReadableStream` 接收 SSE
-- `answerChunksA = ref([])` / `answerChunksB = ref([])` 存分片
-- `answerA` / `answerB` 改为 computed：chunks 拼接
-- 每收到一个 chunk，自动 push，前端自动展示
+    参数:
+        text: 原始 markdown 回答
+        max_lines: 每段最大行数（viewportHeight/17 - 2）
 
-`AnswerPanel.vue` 改动:
-- 用 `ResizeObserver` 监控 `.answer-content` 可用高度
-- 暴露 `contentHeight` 给父组件
-- 接收 `chunksA` / `chunksB` 而不是完整 answer
-- `v-for` 渲染每个 chunk
-- chunk 之间有分隔线 + 上下文提示（如"步骤1: 核心函数"）
-- 新 chunk 出现时有淡入动画
-- `.answer-col` 的 `overflow-y` 改为 `auto`（多个chunk叠加后可滚动，但每个chunk本身不超面板）
+    返回:
+        [{type: 'text', content: str}, {type: 'code', lang: str, content: str}, ...]
 
-**注意**：多chunk叠加后内容会超出面板高度，这是可接受的——
-- 每个chunk本身短到不需要滚动
-- 多个chunk叠加后的整体滚动是"翻阅历史"，不是"在一个chunk内滚动"
-- 或者限制只显示最近N个chunk，更早的折叠
+    规则:
+    1. 正则解析所有 ```lang\ncode``` 代码块
+    2. 代码块之间的文本 = 文本片（去掉 fence 和代码块内容）
+    3. 文本片 > max_lines → 按双换行分拆
+    4. 返回交替 segments
+    """
+```
 
-**验收**:
-- 复杂问题自动分成多个chunk依次出现
-- 每个chunk内部无滚动条
-- chunk出现有动画
+**修改 `/api/ask`**:
+```python
+@app.route("/api/ask", methods=["POST"])
+def ask():
+    # ... 现有逻辑 ...
+    viewport_height = data.get("viewportHeight", 700)
+    max_lines = max(5, int(viewport_height / 17) - 2)
 
----
+    segmentsA = split_answer_into_segments(result["answerA"], max_lines) if result.get("answerA") else []
+    segmentsB = split_answer_into_segments(result["answerB"], max_lines) if result.get("answerB") else []
 
-### Phase 4: 滚动条清理
+    result["segmentsA"] = segmentsA
+    result["segmentsB"] = segmentsB
+    return jsonify(result)
+```
 
-- `.answer-col` 保持 `overflow-y: auto`（多chunk需要整体可滚动）
-- `.block-code` 的 `max-height` 从 300px 改为更小值（如200px）或移除限制（由后端分片控制）
-- 确认 `.block-code` 单独也不会出现滚动条（后端拆分保证代码块不超过23行）
+### frontend/src/App.vue
 
----
+| 改动 | 说明 |
+|------|------|
+| 删除 `parseSSEStream()` | 不再需要 SSE |
+| 删除 `askV2SSE()` | 不再需要 |
+| 删除 `answerChunksA/B` ref | 不需要 |
+| 删除 `answerSegmentsA/B` ref | 由后端返回 |
+| 简化 `handleSubmit()` | 只用 `/api/ask`，传 `viewportHeight` |
 
-## 文件改动计划
+**简化后的 `handleSubmit`**:
+```js
+async function handleSubmit(prompt) {
+  currentQuestion.value = prompt
+  isLoading.value = true
+  answerPanelRef.value?.resetChoice()
+  answerA.value = ''
+  answerB.value = ''
 
-| 文件 | 改动类型 | 说明 |
-|------|----------|------|
-| `backend/app.py` | **大改** | 递归拆分引擎、SSE接口、prompt约束 |
-| `frontend/src/App.vue` | 中改 | SSE接收、chunks状态管理 |
-| `frontend/src/components/AnswerPanel.vue` | 中改 | 多chunk展示、ResizeObserver暴露高度 |
+  try {
+    const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
+    const contextFiles = formatFilesForPrompt(relevantFiles)
+    const viewportHeight = answerPanelRef.value?.contentHeight || 700
+
+    // 眼动数据收集保持不变...
+    let eyeData = null
+    // ...
+
+    const data = await (await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt, contextFiles, viewportHeight,
+        experimentMode: experimentMode.value, eyeData
+      })
+    })).json()
+
+    answerA.value = data.answerA
+    answerB.value = data.answerB
+    // segments 直接传给 AnswerPanel（通过 props）
+  } finally {
+    isLoading.value = false
+  }
+}
+```
+
+### frontend/src/components/AnswerPanel.vue
+
+| 改动 | 说明 |
+|------|------|
+| 新增 props: `segmentsA`, `segmentsB` | 从后端接收分割结果 |
+| 修改 template | segments 优先，flat 模式回退 |
+| 修复 text segment 显示 | 纯文本，不含代码 fence |
+| code segment 显示 | 已有 code-block 样式复用 |
+
+**核心 template 变更**:
+```html
+<!-- segments 模式 -->
+<template v-if="segmentsA && segmentsA.length > 1">
+  <div v-for="(seg, i) in segmentsA" :key="i" class="segment-block">
+    <div v-if="seg.type === 'text'" class="answer-text">{{ seg.content }}</div>
+    <div v-else-if="seg.type === 'code'" class="code-block">
+      <div class="block-header">
+        <span class="block-lang">{{ seg.lang }}</span>
+      </div>
+      <div class="block-code"><pre>{{ seg.content }}</pre></div>
+    </div>
+  </div>
+</template>
+<!-- flat 模式回退（单 segment 或无 segments） -->
+<template v-else>
+  <div class="text-container">
+    <div class="answer-text" v-html="displayTextA"></div>
+  </div>
+  <div v-if="codeBlocksA.length > 0" class="code-blocks">...</div>
+</template>
+```
+
+### frontend/src/utils/answerSplitter.js
+
+- 保留 `splitAnswer()` 作为前端回退（后端未返回 segments 时用）
+- 修复：如果后端已返回 segments，前端不再重复解析
+
+### frontend/src/utils/answerMerger.js
+
+- 保留不动，remove 相关调用
+
+## 里程碑
+
+- [ ] Phase 1: 后端 `split_answer_into_segments` + 改进 `estimate_lines`
+- [ ] Phase 2: 删除递归拆分代码（清理 `recursive_split_answer`、`call_ai_to_split`、`/api/ask-v2`、`generate_single_answer`）
+- [ ] Phase 3: 前端简化（删除 SSE/Chunk 逻辑，接收 segments props）
+- [ ] Phase 4: 前端展示修复（segments 模式干净渲染，不重复）
+- [ ] Phase 5: 验证 — 简单回答不切分，中等回答切 2-3 段，每个段内无滚动条
 
 ## 依赖关系
 
 ```
-Phase 1 (后端递归拆分) → Phase 2 (prompt约束) → Phase 3 (前端接收展示) → Phase 4 (滚动条清理)
+Phase 1 (后端切分逻辑) → Phase 2 (清理) → Phase 3 (前端接收) → Phase 4 (前端展示) → Phase 5 (验证)
 ```
 
-## 里程碑
-
-- [x] Phase 1: 后端递归拆分引擎 + SSE
-- [x] Phase 2: prompt长度约束
-- [x] Phase 3: 前端自动展示多chunk
-- [x] Phase 4: 滚动条清理
-
-## 当前提交记录
-
-| 提交 | 说明 |
-|------|------|
-| 522f775 | isFileApplicable 修复 |
-| e792a51 | 智能截断（已废弃，仅视觉遮盖） |
-| 7640250 | 后端代码块保证 |
-| 5d52151 | 前端代码块检查 |
+Phase 3 和 Phase 4 可并行。
+Phase 2 可以和 Phase 1 一起做。
