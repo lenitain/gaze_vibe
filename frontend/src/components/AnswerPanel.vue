@@ -17,9 +17,7 @@ const props = defineProps({
   autoMode: Boolean,
   confidence: Number,
   answerSegmentsA: Array,
-  answerSegmentsB: Array,
-  chunksA: Array,
-  chunksB: Array
+  answerSegmentsB: Array
 })
 
 const emit = defineEmits(['choice'])

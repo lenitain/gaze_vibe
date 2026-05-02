@@ -28,8 +28,7 @@ const answerALength = ref(0)
 const answerBLength = ref(0)
 const answerSegmentsA = ref([])
 const answerSegmentsB = ref([])
-const answerChunksA = ref([])
-const answerChunksB = ref([])
+
 const currentQuestion = ref('')
 const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
 const choiceSaved = ref(false)
@@ -113,8 +112,6 @@ async function handleSubmit(prompt) {
   answerPanelRef.value?.resetChoice()
   answerSegmentsA.value = []
   answerSegmentsB.value = []
-  answerChunksA.value = []
-  answerChunksB.value = []
   answerA.value = ''
   answerB.value = ''
 
@@ -335,8 +332,6 @@ function handleRegionSwitch({ from, to }) {
             :confidence="confidence"
             :answerSegmentsA="answerSegmentsA"
             :answerSegmentsB="answerSegmentsB"
-            :chunksA="answerChunksA"
-            :chunksB="answerChunksB"
             @choice="handleChoice"
           />
         </div>
