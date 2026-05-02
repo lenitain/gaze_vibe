@@ -30,14 +30,11 @@ curl http://localhost:8000/api/health
 - File System Access API (`window.showDirectoryPicker`, `readwrite` mode) — Chrome 86+ only
 - Files indexed in memory via `fileIndexer.js`, not persisted
 
-### Code Apply Workflow
+### Code Block Display
 
 1. `codeParser.js` parses code blocks from AI answers, `extractFilePath` matches them to project files
-2. Only blocks with a matched file path get a "暂存修改" button; blocks without a path show code preview only
-3. Click "暂存修改" → DiffPreview modal → "应用修改" to stage → button becomes red "已暂存 (取消)"
-4. Click "选择此答案" → writes staged files **from that panel only** to disk via `fileIndexer.writeFile()`
-
-**Per-panel commits**: Left button commits `fileChangesA`, right button commits `fileChangesB`. Each file stores `_stagedBy` ('A' or 'B') to track which panel staged it. `handleChoice(side)` only writes files where `file._stagedBy === side`.
+2. Blocks with a matched file path show a file path header; blocks without a path show the code only
+3. No staging or diff preview — "选择此答案" writes all blocks with file paths directly to disk
 
 **Panel isolation**: `codeBlocksA` shows only source A blocks, `codeBlocksB` shows only source B blocks. Each panel has independent file path deduplication (`usedPathsMap` — one Set per source), so both panels can suggest different changes to the same file.
 
@@ -52,7 +49,12 @@ curl http://localhost:8000/api/health
 
 ### Choice & Preference Submit
 
-`handleChoice(side)` fires API call and file writes **in parallel** — only `await apiPromise` blocks, file writes run in background. Users see "偏好已保存" immediately without waiting for file I/O.
+User clicks "选择此答案" → `handleChoice(side)` in `App.vue`:
+1. Collects code blocks from selected panel (`codeBlocksA` or `codeBlocksB`)
+2. Writes all blocks with file paths to disk via `fileIndexer.writeFile()` (parallel, non-blocking)
+3. Sends preference data to `POST /api/preference` (fire-and-forget)
+4. Shows "偏好已保存" toast
+5. `updateConfidence()` updates EMA bias and round count
 
 ### Question Display
 
@@ -62,16 +64,21 @@ curl http://localhost:8000/api/health
 
 WebGazer initialized once, then `resume()`/`pause()` per session. Camera preview hidden via DOM manipulation. Tracking indicator shows current region (详细解答/简洁解答) with side-specific color (blue/green).
 
-During DiffPreview: eye data is attributed to the side that opened the diff (`diffOpenSide`), not discarded.
+### State (AnswerPanel)
 
-### State
+- `selectedSide` — 'A' | 'B' | null, which side the user chose
+- `choiceDisabled` — true after selection is made
+- `overridden` — true when user manually overrides auto-selection
+- `expandedA` / `expandedB` — collapse state for each panel
+- `resetChoice()` — resets `selectedSide`, `choiceDisabled`, `autoSelected`, `overridden`; called on each new submission
 
-- `fileChangesA` / `fileChangesB` — separate Maps per panel, key: filePath, value: {content}
-- `file._originalContent` — set on stage, used for rollback on unstage
-- `file._stagedBy` — 'A' or 'B', determines which panel's commit writes this file
-- `block._panel` — forces a block's actions to target a specific panel's state
-- `commitAll(side)` only clears UI state; actual writes happen in `App.vue handleChoice()`
-- `resetChoice()` — resets `selectedSide`, `choiceDisabled`, and both `fileChanges` Maps; called on each new submission
+### State (App.vue)
+
+- `currentQuestion` — current user question text
+- `answerA` / `answerB` — raw AI answer strings
+- `answerSegmentsA` / `answerSegmentsB` — multi-round segment arrays (when `segments.length > 1`)
+- `userPreference` — `{ finalChoice, timeOnA, timeOnB, leftToRight, rightToLeft }`
+- `emaBias` / `roundCount` — confidence inference state
 
 ## Code Style
 
@@ -91,4 +98,4 @@ During DiffPreview: eye data is attributed to the side that opened the diff (`di
 
 ## Theme
 
-Everforest Dark Medium. Font sizes are **1.5x scaled** — `--font-xs` is 18px (not the default 12px). All colors as CSS variables in `src/styles/everforest.css`.
+Everforest Dark Medium. Font sizes use `--font-scale: 0.7` — `--font-xs` is 8.4px, `--font-base` is 10.5px. All colors as CSS variables in `src/styles/everforest.css`.
