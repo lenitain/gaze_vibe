@@ -165,9 +165,9 @@ API 失败、文件写入失败仅在 console.log 输出，用户无感知。Dee
 
 已修复：⚛ 替换为 JSX/TSX 文本。
 
-### P3 - DiffPreview.vue 死代码
+### P3 - DiffPreview.vue 死代码 ✅
 
-`DiffPreview.vue` 存在于文件系统但从未被任何组件 import。
+已删除。
 
 ---
 
