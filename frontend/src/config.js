@@ -1,7 +1,12 @@
+// ===== 与后端 config.py 共享的常量 =====
+// ⚠️ 修改以下数值时，必须同步更新 backend/config.py
+
 // Confidence inference (App.vue)
-export const ALPHA = 0.3
-export const MIN_EYE_TIME = 2000
+export const ALPHA = 0.3           // 与 backend/config.py ALPHA 同步
+export const MIN_EYE_TIME = 2000   // 与 backend/config.py MIN_EYE_TIME 同步
 export const STRONG_WEIGHT = 0.7
+
+// ===== 纯前端常量（无需同步后端） =====
 
 // File selector (fileSelector.js)
 export const MAX_SELECTED_FILES = 5

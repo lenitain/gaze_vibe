@@ -5,6 +5,9 @@ GazeVibe 后端服务
 1. 实时调整：基于当前轮次眼动数据调整回答风格
 2. 长期建模：使用 EMA 平滑用户偏好
 3. 详细日志：输出类似 LLM 的思考过程
+
+Prompt 管理：所有 system prompt 存放在 backend/prompts/ 目录，
+通过 prompts 模块统一加载（参考 pi-mono .pi/prompts/ 模式）。
 """
 
 import os
@@ -18,6 +21,7 @@ import openai
 
 from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
 from errors import APIError, register_error_handlers
+from prompts import load_prompt
 
 load_dotenv()
 
@@ -35,49 +39,53 @@ client = openai.OpenAI(
 eye_processor = EyeTrackerProcessor()
 
 
-def adjust_system_prompt(base_prompt: str, adjustments: dict, prompt_type: str) -> str:
+def adjust_system_prompt(base_prompt: str, adjustments: dict) -> str:
     """
-    根据调整参数修改 system prompt
+    根据眼动调整参数修改 system prompt
 
     Args:
-        base_prompt: 基础 prompt
+        base_prompt: 基础 prompt（从 prompts/ 加载）
         adjustments: 调整参数 (detail_score, explanation_score)
-        prompt_type: "detailed" 或 "concise"
+
+    Returns:
+        添加了偏好调整指令的 prompt
     """
     detail = adjustments["detail_score"]
     explanation = adjustments["explanation_score"]
 
-    adjustment_notes = []
+    notes = []
 
-    # 详细程度调整（连续梯度，偏离 0.5 即有微调）
     if detail > 0.55:
         strength = "更" if detail < 0.65 else "明显"
-        adjustment_notes.append(f"用户偏好详细解答，请提供{strength}完整的解释和示例")
+        notes.append(f"用户偏好详细解答，请提供{strength}完整的解释和示例")
     elif detail < 0.45:
         strength = "更" if detail > 0.35 else "明显"
-        adjustment_notes.append(
-            f"用户偏好简洁解答，请{strength}精简解释，直接给核心代码"
-        )
+        notes.append(f"用户偏好简洁解答，请{strength}精简解释，直接给核心代码")
 
-    # 解释 vs 代码调整（连续梯度）
     if explanation > 0.55:
         strength = "适当" if explanation < 0.65 else "多"
-        adjustment_notes.append(
-            f"用户喜欢原理性解释，请{strength}增加设计思路和原理解释"
-        )
+        notes.append(f"用户喜欢原理性解释，请{strength}增加设计思路和原理解释")
     elif explanation < 0.45:
         strength = "适当" if explanation > 0.35 else "尽量"
-        adjustment_notes.append(
-            f"用户喜欢直接看代码，请{strength}减少文字解释，代码优先"
-        )
+        notes.append(f"用户喜欢直接看代码，请{strength}减少文字解释，代码优先")
 
-    if adjustment_notes:
-        adjustment_text = "\n\n[用户偏好调整]\n" + "\n".join(
-            f"- {note}" for note in adjustment_notes
-        )
-        return base_prompt + adjustment_text
+    if not notes:
+        return base_prompt
 
-    return base_prompt
+    adjustment_text = "\n\n[用户偏好调整]\n" + "\n".join(f"- {note}" for note in notes)
+    return base_prompt + adjustment_text
+
+
+def build_context_text(context_files: list[dict] | None) -> str:
+    """构建项目文件上下文字符串"""
+    if not context_files:
+        return ""
+    parts = ["\n\n## 项目文件上下文\n\n"]
+    for file in context_files:
+        lang = file.get("lang", "")
+        parts.append(f"### {file['path']}\n\n```{lang}\n{file['content']}\n```\n\n")
+    parts.append("请基于以上项目代码上下文回答用户的问题。\n")
+    return "".join(parts)
 
 
 def generate_dual_answers(prompt, context_files=None, eye_data=None):
@@ -106,7 +114,6 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
         print_thoughts(eye_result["thoughts"])
 
         if eye_result["valid"]:
-            # 即时调整用原始分数（响应快），长期模型用 EMA
             current = eye_result.get("current_scores", {})
             adjustments = {
                 "detail_score": current.get("detail_score", eye_result["detail_score"]),
@@ -120,40 +127,18 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
     else:
         print("\n  无眼动数据，使用默认参数")
 
-    # 构建系统提示词
-    system_a = """你是一个注重代码可读性的编程导师。
-请输出**注释丰富、讲解详细**的代码：
-- 代码中每个关键步骤都添加中文注释，说明为何这样写
-- 处理边界情况和错误
-- 代码结构清晰，变量命名语义化
-- 代码块前给出一两句话的简要说明即可，不要在代码外长篇大论
-重点在代码质量，而非文字篇幅。
-每次回答代码不超过15行，说明文字不超过3行"""
+    # 从 prompts/ 目录加载 system prompts
+    system_a = load_prompt("system_a")
+    system_b = load_prompt("system_b")
 
-    system_b = """你是一个追求代码简洁性的编程助手。
-请输出**精简干练、无注释**的代码：
-- 代码中不写注释，用自解释的变量名和函数名
-- 用最短的路径实现功能，合并可简化的逻辑
-- 不处理非必要的边缘情况
-- 代码块前给出一句话说明即可
-重点在代码精简，而非文字篇幅。
-每次回答代码不超过15行，说明文字不超过3行"""
+    context_text = build_context_text(context_files)
+    system_a += context_text
+    system_b += context_text
 
-    # 添加项目文件上下文
-    if context_files:
-        context_text = "\n\n## 项目文件上下文\n\n"
-        for file in context_files:
-            context_text += f"### {file['path']}\n\n```{file.get('lang', '')}\n{file['content']}\n```\n\n"
-        context_text += "请基于以上项目代码上下文回答用户的问题。\n"
+    # 根据眼动调整参数修改 prompt
+    system_a = adjust_system_prompt(system_a, adjustments)
+    system_b = adjust_system_prompt(system_b, adjustments)
 
-        system_a += context_text
-        system_b += context_text
-
-    # 根据调整参数修改 prompt
-    system_a = adjust_system_prompt(system_a, adjustments, "detailed")
-    system_b = adjust_system_prompt(system_b, adjustments, "concise")
-
-    # 打印 prompt 调整信息
     if adjustments["detail_score"] != 0.5 or adjustments["explanation_score"] != 0.5:
         print("\n  Prompt 已根据用户偏好调整")
         if adjustments["detail_score"] > 0.6:
@@ -164,7 +149,6 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
     try:
         print("\n  调用 DeepSeek API...")
 
-        # 生成详细答案
         response_a = client.chat.completions.create(
             model="deepseek-chat",
             messages=[
@@ -177,7 +161,6 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
         answer_a = response_a.choices[0].message.content
         print(f"    ✓ 详细解答生成完成 ({len(answer_a)} 字符)")
 
-        # 生成简洁答案
         response_b = client.chat.completions.create(
             model="deepseek-chat",
             messages=[
@@ -197,7 +180,6 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
             "adjustments": adjustments,
         }
 
-        # 添加眼动处理结果
         if eye_result:
             result["eyeProcessing"] = {
                 "valid": eye_result["valid"],
@@ -229,22 +211,8 @@ def split_user_question(prompt, context_files, max_sub_questions=4):
         for f in context_files:
             context_text += f"\n文件 {f['path']}:\n{f['content']}\n"
 
-    split_system = f"""你是一个任务规划助手。用户的编程问题需要从多个角度回答。
-请将用户的问题拆成 2-{max_sub_questions} 个独立子问题。
-
-要求:
-1. 每个子问题专注一个具体方面
-2. 每个子问题的 AI 回答应较短（不超过 20 行代码 + 5 行说明）
-3. 子问题之间保持逻辑顺序
-4. 不要遗漏重要方面
-5. 每个子问题应该是独立的、可回答的
-6. 用中文输出 contextHint
-
-输出 JSON 格式（只输出 JSON，不要其他文字）:
-[
-  {{"id": "1", "prompt": "请实现...", "contextHint": "核心函数", "dependsOn": ""}},
-  {{"id": "2", "prompt": "请添加...", "contextHint": "边界处理", "dependsOn": "1"}}
-]"""
+    # 从 prompts/ 加载分割系统 prompt
+    split_system = load_prompt("system_split", {"max_sub_questions": max_sub_questions})
 
     try:
         full_prompt = prompt
@@ -314,7 +282,6 @@ def ask():
                 preview = result.get("answerB", result.get("answerA", ""))
                 prev_summary = preview[:200] + "..." if len(preview) > 200 else preview
 
-        # 推送完成事件（携带调整参数供前端记录）
         done = {
             "type": "done",
             "experimentMode": experiment_mode,
@@ -331,14 +298,12 @@ def save_preference():
     data = request.json
     preference = data.get("preference", {})
     experiment_mode = data.get("experimentMode", "full")
-    eye_metrics = data.get("eyeMetrics")  # 新增：详细眼动指标
+    eye_metrics = data.get("eyeMetrics")
     answer_a_length = data.get("answerALength", 0)
     answer_b_length = data.get("answerBLength", 0)
 
-    # 先处理眼动数据 (6步处理)，再保存（确保adjustments是最新的）
     processed_scores = None
     if eye_metrics:
-        # 合并 preference 中的时间数据到眼动指标
         eye_data_for_process = {
             "timeOnA": preference.get("timeOnA", 0),
             "timeOnB": preference.get("timeOnB", 0),
@@ -351,11 +316,9 @@ def save_preference():
         eye_result = eye_processor.process(eye_data_for_process)
         print_thoughts(eye_result["thoughts"])
 
-        # 提取处理后的中间指标
         if eye_result.get("valid"):
             processed_scores = eye_result.get("current_scores", {})
 
-    # 记录实验数据（在处理之后，确保adjustments是最新的）
     experiment_data = {
         "experimentMode": experiment_mode,
         "preference": preference,
@@ -367,7 +330,6 @@ def save_preference():
         "timestamp": datetime.now().isoformat(),
     }
 
-    # 保存到实验数据文件
     experiment_file = "experiment_data.jsonl"
     try:
         with open(experiment_file, "a", encoding="utf-8") as f:
@@ -375,7 +337,6 @@ def save_preference():
     except Exception as e:
         print(f"保存实验数据失败: {e}")
 
-    # 打印偏好数据摘要
     print("\n" + "─" * 60)
     print("  用户偏好数据")
     print("─" * 60)
@@ -386,7 +347,6 @@ def save_preference():
     print(f"  左→右切换: {preference.get('leftToRight', 0)} 次")
     print(f"  右→左切换: {preference.get('rightToLeft', 0)} 次")
 
-    # 打印长期模型状态
     adjustments = eye_processor.get_prompt_adjustments()
     print(f"\n  长期模型状态:")
     print(f"    累计轮次: {adjustments['round_count']}")
