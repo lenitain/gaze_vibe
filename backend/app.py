@@ -19,6 +19,7 @@ from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import openai
 
+from config import ALPHA
 from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
 from errors import APIError, register_error_handlers
 from prompts import load_prompt
@@ -393,7 +394,7 @@ if __name__ == "__main__":
     print(
         f"  DeepSeek API Key: {'已配置' if client.api_key and client.api_key != 'your-api-key-here' else '未配置'}"
     )
-    print(f"  眼动模型: 已初始化 (EMA α = {EyeTrackerProcessor.ALPHA})")
+    print(f"  眼动模型: 已初始化 (EMA α = {ALPHA})")
     print(f"  访问 http://localhost:8000/api/health 检查状态")
     print("=" * 60)
     app.run(host="0.0.0.0", port=8000, debug=True, use_reloader=False)
