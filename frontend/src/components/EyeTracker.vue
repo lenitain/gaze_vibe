@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { DEBOUNCE_THRESHOLD } from '../config.js'
 
 const props = defineProps({
   diffOpen: {
@@ -26,7 +27,6 @@ let regionStartTime = null
 
 let lastSwitchTime = null
 let lastSwitchFrom = null
-const DEBOUNCE_THRESHOLD = 80
 
 let totalDurationA = 0
 let totalDurationB = 0

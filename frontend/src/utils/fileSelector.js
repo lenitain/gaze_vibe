@@ -1,5 +1,4 @@
-const MAX_SELECTED_FILES = 5
-const MAX_CONTENT_LENGTH = 50000 // 50KB total content
+import { MAX_SELECTED_FILES, MAX_CONTENT_LENGTH } from '../config.js'
 
 export function selectRelevantFiles(question, files) {
   if (!files || files.length === 0) return []

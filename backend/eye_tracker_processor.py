@@ -12,6 +12,8 @@ import json
 from datetime import datetime
 from typing import Optional
 
+from config import ALPHA, INITIAL_DETAIL, INITIAL_EXPLANATION, MIN_EYE_TIME
+
 
 class EyeTrackerProcessor:
     """
@@ -22,18 +24,12 @@ class EyeTrackerProcessor:
     2. 长期建模：使用 EMA 平滑用户偏好
     """
 
-    # EMA 平滑系数
-    ALPHA = 0.3
-    # 长期模型初始值
-    INITIAL_DETAIL = 0.5
-    INITIAL_EXPLANATION = 0.5
-    # 最小眼动时长阈值 (ms)
-    MIN_EYE_TIME = 2000
+    # 常亮来自 config.py: ALPHA, INITIAL_DETAIL, INITIAL_EXPLANATION, MIN_EYE_TIME
 
     def __init__(self):
         # 长期模型
-        self.long_term_detail = self.INITIAL_DETAIL
-        self.long_term_explanation = self.INITIAL_EXPLANATION
+        self.long_term_detail = INITIAL_DETAIL
+        self.long_term_explanation = INITIAL_EXPLANATION
         # 轮次计数
         self.round_count = 0
         # 历史记录
@@ -161,7 +157,7 @@ class EyeTrackerProcessor:
     def _validate_data(self, metrics: dict) -> bool:
         """检查数据是否足够进行分析"""
         total_time = metrics["timeOnA"] + metrics["timeOnB"]
-        return total_time >= self.MIN_EYE_TIME
+        return total_time >= MIN_EYE_TIME
 
     def _calculate_current_scores(self, metrics: dict, thoughts: list) -> dict:
         """
@@ -350,7 +346,7 @@ class EyeTrackerProcessor:
 
     def _update_long_term_model(self, current_scores: dict, thoughts: list):
         """使用 EMA 更新长期模型"""
-        alpha = self.ALPHA
+        alpha = ALPHA
 
         # 更新 detail_score
         old_detail = self.long_term_detail
@@ -453,9 +449,9 @@ class EyeTrackerProcessor:
     def from_dict(cls, data: dict) -> "EyeTrackerProcessor":
         """从字典恢复状态"""
         processor = cls()
-        processor.long_term_detail = data.get("long_term_detail", cls.INITIAL_DETAIL)
+        processor.long_term_detail = data.get("long_term_detail", INITIAL_DETAIL)
         processor.long_term_explanation = data.get(
-            "long_term_explanation", cls.INITIAL_EXPLANATION
+            "long_term_explanation", INITIAL_EXPLANATION
         )
         processor.round_count = data.get("round_count", 0)
         processor.history = data.get("history", [])

@@ -9,6 +9,8 @@ import FileViewer from './components/FileViewer.vue'
 import { FileIndexer } from './utils/fileIndexer.js'
 import { selectRelevantFiles, formatFilesForPrompt } from './utils/fileSelector.js'
 import { parseCodeBlocks } from './utils/codeParser.js'
+import { ALPHA, MIN_EYE_TIME, STRONG_WEIGHT } from './config.js'
+import { createError, fromApiError, fromFileError, ErrorTypes } from './utils/errors.js'
 
 const isEyeTracking = ref(false)
 const eyeTrackerRef = ref(null)
@@ -32,12 +34,9 @@ const answerSegmentsB = ref([])
 const currentQuestion = ref('')
 const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
 const choiceSaved = ref(false)
-const errorMessage = ref('')
+const error = ref(null)
 
-// Confidence inference
-const ALPHA = 0.3
-const MIN_EYE_TIME = 2000
-const STRONG_WEIGHT = 0.7
+// Confidence inference (constants loaded from config.js)
 const emaBias = ref(0.5)
 const roundCount = ref(0)
 const decisionStartTime = ref(null)
@@ -188,8 +187,7 @@ async function handleSubmit(prompt) {
     }
   } catch (err) {
     console.error('Error:', err)
-    errorMessage.value = err.message || '请求失败，请重试'
-    setTimeout(() => { errorMessage.value = '' }, 5000)
+    error.value = fromApiError(err, '/api/ask')
   } finally {
     isLoading.value = false
   }
@@ -227,8 +225,7 @@ async function handleChoice(side) {
   }
 
   if (writeResults.fail > 0) {
-    errorMessage.value = `${writeResults.fail} 个文件写入失败`
-    setTimeout(() => { errorMessage.value = '' }, 5000)
+    error.value = fromFileError(writeResults.fail)
   }
 
   fetch('/api/preference', {
@@ -362,7 +359,7 @@ function handleRegionSwitch({ from, to }) {
       <div v-if="choiceSaved" class="toast toast-pref">偏好已保存</div>
     </transition>
     <transition name="fade">
-      <div v-if="errorMessage" class="toast toast-error">{{ errorMessage }}</div>
+      <div v-if="error" :class="['toast', error.type === 'file' ? 'toast-warn' : 'toast-error']">{{ error.message }}</div>
     </transition>
   </div>
 </template>
@@ -582,6 +579,11 @@ function handleRegionSwitch({ from, to }) {
 .toast-error {
   bottom: 90px;
   background: var(--red);
+}
+
+.toast-warn {
+  bottom: 90px;
+  background: var(--yellow);
 }
 
 .fade-enter-active,

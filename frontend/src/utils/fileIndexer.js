@@ -1,33 +1,4 @@
-const IGNORE_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'build',
-  '.next',
-  '.nuxt',
-  '__pycache__',
-  '.venv',
-  'venv',
-  '.env',
-  '.idea',
-  '.vscode'
-])
-
-const CODE_EXTENSIONS = new Set([
-  '.js', '.jsx', '.ts', '.tsx',
-  '.vue', '.svelte',
-  '.py', '.rb', '.go', '.rs',
-  '.java', '.c', '.cpp', '.h',
-  '.css', '.scss', '.less',
-  '.html', '.htm',
-  '.json', '.yaml', '.yml', '.toml',
-  '.md', '.txt',
-  '.sh', '.bash',
-  '.sql',
-  '.graphql', '.gql'
-])
-
-const MAX_FILE_SIZE = 1024 * 1024 // 1MB
+import { IGNORE_DIRS, CODE_EXTENSIONS, MAX_FILE_SIZE } from '../config.js'
 
 export class FileIndexer {
   constructor() {

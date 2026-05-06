@@ -17,11 +17,13 @@ from flask_cors import CORS
 import openai
 
 from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
+from errors import APIError, register_error_handlers
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+register_error_handlers(app)
 
 # 配置 DeepSeek API (兼容 OpenAI 格式)
 client = openai.OpenAI(
@@ -279,7 +281,7 @@ def ask():
     eye_data = data.get("eyeData")
 
     if not prompt:
-        return jsonify({"error": "请输入问题"}), 400
+        raise APIError("请输入问题", 400)
 
     sub_questions = split_user_question(prompt, context_files)
 
