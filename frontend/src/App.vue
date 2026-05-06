@@ -114,30 +114,33 @@ async function handleSubmit(prompt) {
   answerSegmentsB.value = []
   answerA.value = ''
   answerB.value = ''
+  error.value = null
+
+  const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
+  const contextFiles = formatFilesForPrompt(relevantFiles)
+
+  let eyeData = null
+  if (eyeTrackerRef.value && isEyeTracking.value) {
+    eyeTrackerRef.value.stopTracking()
+    isEyeTracking.value = false
+    eyeData = {
+      timeOnA: userPreference.value.timeOnA,
+      timeOnB: userPreference.value.timeOnB,
+      leftToRight: userPreference.value.leftToRight,
+      rightToLeft: userPreference.value.rightToLeft,
+      answerALength: answerALength.value,
+      answerBLength: answerBLength.value,
+      ...eyeTrackerRef.value.getAllMetrics()
+    }
+    userPreference.value.timeOnA = 0
+    userPreference.value.timeOnB = 0
+    userPreference.value.leftToRight = 0
+    userPreference.value.rightToLeft = 0
+  }
+
+  let eyeTrackingStarted = false
 
   try {
-    const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
-    const contextFiles = formatFilesForPrompt(relevantFiles)
-
-    let eyeData = null
-    if (eyeTrackerRef.value && isEyeTracking.value) {
-      eyeTrackerRef.value.stopTracking()
-      isEyeTracking.value = false
-      eyeData = {
-        timeOnA: userPreference.value.timeOnA,
-        timeOnB: userPreference.value.timeOnB,
-        leftToRight: userPreference.value.leftToRight,
-        rightToLeft: userPreference.value.rightToLeft,
-        answerALength: answerALength.value,
-        answerBLength: answerBLength.value,
-        ...eyeTrackerRef.value.getAllMetrics()
-      }
-      userPreference.value.timeOnA = 0
-      userPreference.value.timeOnB = 0
-      userPreference.value.leftToRight = 0
-      userPreference.value.rightToLeft = 0
-    }
-
     const response = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -150,23 +153,75 @@ async function handleSubmit(prompt) {
     if (!response.ok) {
       throw new Error(`API 请求失败: ${response.status}`)
     }
-    const data = await response.json()
-    if (!data.success) {
-      throw new Error(data.error || 'API 返回错误')
+
+    // 逐段读取 SSE 流
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let segmentsArrived = 0
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      // 按 SSE 双换行分割
+      const parts = buffer.split('\n\n')
+      buffer = parts.pop() || '' // 保留最后一个不完整块
+
+      for (const part of parts) {
+        const dataLine = part.split('\n').find(l => l.startsWith('data: '))
+        if (!dataLine) continue
+
+        let parsed
+        try {
+          parsed = JSON.parse(dataLine.slice(6))
+        } catch {
+          continue
+        }
+
+        if (parsed.type === 'segment' && parsed.success) {
+          segmentsArrived++
+
+          // 追加到 segments 列表
+          answerSegmentsA.value = [...answerSegmentsA.value, {
+            id: parsed.id,
+            contextHint: parsed.hint,
+            content: parsed.answerA
+          }]
+          answerSegmentsB.value = [...answerSegmentsB.value, {
+            id: parsed.id,
+            contextHint: parsed.hint,
+            content: parsed.answerB
+          }]
+
+          // 累积全文（用于 code block 解析）
+          const separator = answerA.value ? '\n\n---\n\n' : ''
+          answerA.value += separator + (parsed.answerA || '')
+          answerB.value += separator + (parsed.answerB || '')
+          answerALength.value = answerA.value.length
+          answerBLength.value = answerB.value.length
+
+          // 首个 segment 到达后启动眼动
+          if (!eyeTrackingStarted && experimentMode.value !== 'control' && eyeTrackerRef.value && !isEyeTracking.value) {
+            eyeTrackerRef.value.startTracking()
+            isEyeTracking.value = true
+            eyeTrackingStarted = true
+            decisionStartTime.value = Date.now()
+          }
+        }
+
+        if (parsed.type === 'done') {
+          isLoading.value = false
+        }
+      }
     }
 
-    answerA.value = data.answerA || ''
-    answerB.value = data.answerB || ''
-    answerALength.value = data.answerA?.length || 0
-    answerBLength.value = data.answerB?.length || 0
+    // 流结束，安全 fallback
+    if (isLoading.value) isLoading.value = false
 
-    if (data.segments && data.segments.length > 1) {
-      answerSegmentsA.value = data.segments.map(s => ({
-        id: s.id, contextHint: s.hint, content: s.answerA
-      }))
-      answerSegmentsB.value = data.segments.map(s => ({
-        id: s.id, contextHint: s.hint, content: s.answerB
-      }))
+    if (segmentsArrived === 0) {
+      throw new Error('未接收到任何回答')
     }
 
     const blocksA = parseCodeBlocks(answerA.value || '')
@@ -174,21 +229,9 @@ async function handleSubmit(prompt) {
     if (blocksA.length === 0 && blocksB.length === 0) {
       console.warn('AI response contains no code blocks')
     }
-
-    if (data.eyeProcessing && data.eyeProcessing.valid) {
-      console.log('眼动调整结果:', data.eyeProcessing)
-    }
-
-    decisionStartTime.value = Date.now()
-
-    if (experimentMode.value !== 'control' && eyeTrackerRef.value) {
-      eyeTrackerRef.value.startTracking()
-      isEyeTracking.value = true
-    }
   } catch (err) {
     console.error('Error:', err)
     error.value = fromApiError(err, '/api/ask')
-  } finally {
     isLoading.value = false
   }
 }

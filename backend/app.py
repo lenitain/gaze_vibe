@@ -12,7 +12,7 @@ import re
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import openai
 
@@ -273,7 +273,7 @@ def split_user_question(prompt, context_files, max_sub_questions=4):
 
 @app.route("/api/ask", methods=["POST"])
 def ask():
-    """处理用户的提问"""
+    """处理用户的提问 — SSE 分段推送"""
     data = request.json
     prompt = data.get("prompt", "")
     context_files = data.get("contextFiles", [])
@@ -284,46 +284,45 @@ def ask():
         raise APIError("请输入问题", 400)
 
     sub_questions = split_user_question(prompt, context_files)
-
     if not sub_questions or len(sub_questions) <= 1:
-        result = generate_dual_answers(prompt, context_files, eye_data)
-        result["experimentMode"] = experiment_mode
-        result["segments"] = []
-        return jsonify(result)
+        sub_questions = [{"id": "1", "prompt": prompt, "contextHint": ""}]
 
-    segments = []
-    prev_summary = None
+    def generate():
+        prev_summary = None
 
-    for sq in sub_questions:
-        sub_prompt = sq["prompt"]
-        if prev_summary and sq.get("dependsOn"):
-            sub_prompt = f"上一步: {prev_summary}\n\n当前: {sub_prompt}"
+        for i, sq in enumerate(sub_questions):
+            sub_prompt = sq["prompt"]
+            if prev_summary and sq.get("dependsOn"):
+                sub_prompt = f"上一步: {prev_summary}\n\n当前: {sub_prompt}"
 
-        full_prompt = f"原始问题: {prompt}\n\n当前子任务: {sub_prompt}"
-        result = generate_dual_answers(full_prompt, context_files, eye_data)
+            full_prompt = f"原始问题: {prompt}\n\n当前子任务: {sub_prompt}"
+            result = generate_dual_answers(full_prompt, context_files, eye_data)
 
-        segments.append({
-            "id": sq["id"],
-            "hint": sq.get("contextHint", ""),
-            "answerA": result.get("answerA", ""),
-            "answerB": result.get("answerB", ""),
-            "success": result.get("success", False),
-        })
+            event = {
+                "type": "segment",
+                "index": i,
+                "total": len(sub_questions),
+                "id": sq["id"],
+                "hint": sq.get("contextHint", ""),
+                "answerA": result.get("answerA", ""),
+                "answerB": result.get("answerB", ""),
+                "success": result.get("success", False),
+            }
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-        if result.get("success"):
-            preview = result.get("answerB", result.get("answerA", ""))
-            prev_summary = preview[:200] + "..." if len(preview) > 200 else preview
+            if result.get("success"):
+                preview = result.get("answerB", result.get("answerA", ""))
+                prev_summary = preview[:200] + "..." if len(preview) > 200 else preview
 
-    full_a = "\n\n---\n\n".join(s["answerA"] for s in segments if s["answerA"])
-    full_b = "\n\n---\n\n".join(s["answerB"] for s in segments if s["answerB"])
+        # 推送完成事件（携带调整参数供前端记录）
+        done = {
+            "type": "done",
+            "experimentMode": experiment_mode,
+            "adjustments": eye_processor.get_prompt_adjustments(),
+        }
+        yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
 
-    return jsonify({
-        "answerA": full_a,
-        "answerB": full_b,
-        "segments": segments,
-        "success": True,
-        "experimentMode": experiment_mode,
-    })
+    return Response(generate(), mimetype="text/event-stream")
 
 
 @app.route("/api/preference", methods=["POST"])
