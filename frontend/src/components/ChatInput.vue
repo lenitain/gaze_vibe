@@ -34,6 +34,7 @@ function submit() {
 
 <style scoped>
 .chat-input {
+  flex: 1;
   display: flex;
   gap: 12px;
   padding: 16px;
