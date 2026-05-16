@@ -1,24 +1,18 @@
 """
-Persona 状态持久化 + 动态调整
+Persona 动态调整（纯数据变换，无文件 I/O）
 
-管理两个 Persona 当前 scores 的持久化（不在 YAML 中硬编码）。
 每轮用户选择后：
 - 选中侧 → 不变
 - 未选中侧 → EMA 朝向选中侧收束
 - 收敛后 → 未被选中的一侧随机探索
+
+前后端流程：
+  前端从项目根目录读取 persona_state.json → 传给后端
+  后端处理并返回更新后的 state → 前端写回文件
 """
 
-import json
-import os
 import random
-from pathlib import Path
-from typing import Optional
-
 from persona_loader import PersonaLoader, Persona, DIMENSION_PRIORITY
-
-
-# 存储目录：按项目名隔离
-_STATES_DIR = Path(__file__).parent / "persona_states"
 
 # 关键维度用于收敛检测
 KEY_DIMS = [
@@ -35,160 +29,120 @@ CONVERGE_THRESHOLD = 0.5
 # EMA 系数
 ALPHA = 0.3
 
-class PersonaState:
-    """Persona 动态状态"""
+DEFAULT_PERSONA_A = "稳健派"
+DEFAULT_PERSONA_B = "现代派"
 
-    def __init__(
-        self,
-        project_name: str = "default",
-        persona_a_name: str = "稳健派",
-        persona_b_name: str = "现代派",
-    ):
-        self.project_name = project_name
-        self.persona_a_name = persona_a_name
-        self.persona_b_name = persona_b_name
 
-        # 加载初始 scores（从 YAML）
-        self.persona_a: Persona = PersonaLoader.load(persona_a_name)
-        self.persona_b: Persona = PersonaLoader.load(persona_b_name)
+def initial_state() -> dict:
+    """生成初始状态 dict（前端首次打开项目时用）"""
+    pa = PersonaLoader.load(DEFAULT_PERSONA_A)
+    pb = PersonaLoader.load(DEFAULT_PERSONA_B)
 
-        # 将 int scores 转为 float（保留原本的值）
-        for dim in self.persona_a.scores:
-            self.persona_a.scores[dim] = float(self.persona_a.scores[dim])
-        for dim in self.persona_b.scores:
-            self.persona_b.scores[dim] = float(self.persona_b.scores[dim])
+    return {
+        "version": 1,
+        "converged": False,
+        "persona_a": {
+            "name": DEFAULT_PERSONA_A,
+            "scores": {k: float(v) for k, v in pa.scores.items()},
+        },
+        "persona_b": {
+            "name": DEFAULT_PERSONA_B,
+            "scores": {k: float(v) for k, v in pb.scores.items()},
+        },
+    }
 
-        self.converged = False
 
-    def _state_path(self) -> Path:
-        """获取当前项目的状态文件路径"""
-        _STATES_DIR.mkdir(parents=True, exist_ok=True)
-        safe_name = self.project_name.replace("/", "_").replace("\\", "_")
-        return _STATES_DIR / f"{safe_name}.json"
+def record_choice(state: dict, chosen_side: str) -> dict:
+    """
+    记录用户选择，返回更新后的 state dict
 
-    def record_choice(self, chosen_side: str):
-        """
-        记录用户选择，调整 Persona scores
+    Args:
+        state: 当前 persona state dict
+        chosen_side: "A" 或 "B"
 
-        Args:
-            chosen_side: "A" 或 "B"
-        """
-        if chosen_side == "A":
-            chosen_p = self.persona_a
-            other_p = self.persona_b
-        else:
-            chosen_p = self.persona_b
-            other_p = self.persona_a
+    Returns:
+        更新后的 state dict（原地修改 + 返回）
+    """
+    persona_a = state["persona_a"]["scores"]
+    persona_b = state["persona_b"]["scores"]
+    converged = state.get("converged", False)
 
-        # 检测是否已收敛
-        gap = self._convergence_gap()
-        if gap < CONVERGE_THRESHOLD:
-            self.converged = True
+    if chosen_side == "A":
+        chosen_scores = persona_a
+        other_scores = persona_b
+    else:
+        chosen_scores = persona_b
+        other_scores = persona_a
 
-        if not self.converged:
-            # 收敛中：未选中侧 EMA 朝向选中侧
-            for dim in DIMENSION_PRIORITY:
-                if dim not in chosen_p.scores or dim not in other_p.scores:
-                    continue
-                target = chosen_p.scores[dim]
-                current = other_p.scores[dim]
-                new_val = ALPHA * target + (1 - ALPHA) * current
-                other_p.scores[dim] = round(new_val, 2)
+    # 检测是否已收敛
+    gap = _convergence_gap(persona_a, persona_b)
+    if not converged and gap < CONVERGE_THRESHOLD:
+        converged = True
 
-                # 保持在 1-5 范围内
-                other_p.scores[dim] = max(1.0, min(5.0, other_p.scores[dim]))
-        else:
-            # 收敛后：未被选中的一侧随机探索
-            self._explore_random(other_p)
+    if not converged:
+        # 收敛中：未选中侧 EMA 朝向选中侧
+        for dim in DIMENSION_PRIORITY:
+            if dim not in chosen_scores or dim not in other_scores:
+                continue
+            target = chosen_scores[dim]
+            current = other_scores[dim]
+            new_val = ALPHA * target + (1 - ALPHA) * current
+            other_scores[dim] = round(max(1.0, min(5.0, new_val)), 2)
+    else:
+        # 收敛后：未被选中的一侧随机探索
+        _explore_random(other_scores)
 
-    def _convergence_gap(self) -> float:
-        """计算两个 Persona 在关键维度上的平均差距"""
-        gaps = []
-        for dim in KEY_DIMS:
-            a = self.persona_a.scores.get(dim, 3.0)
-            b = self.persona_b.scores.get(dim, 3.0)
-            gaps.append(abs(a - b))
-        return sum(gaps) / len(gaps) if gaps else 0.0
+    state["converged"] = converged
+    return state
 
-    def _explore_random(self, persona: Persona):
-        """随机探索：在 1-2 个维度上 ±1 随机扰动"""
-        available_dims = [d for d in DIMENSION_PRIORITY if d in persona.scores]
-        if not available_dims:
-            return
 
-        n_dims = random.randint(1, min(2, len(available_dims)))
-        dims_to_change = random.sample(available_dims, n_dims)
+def get_persona_bias(state: dict) -> float:
+    """
+    计算两个 Persona 之间的偏差 (0~1)
 
-        for dim in dims_to_change:
-            delta = random.choice([-1.0, -0.5, 0.5, 1.0])
-            new_val = persona.scores[dim] + delta
-            persona.scores[dim] = max(1.0, min(5.0, round(new_val, 2)))
+    0.0 = 完全相同, 1.0 = 差异极大
+    """
+    gap = _convergence_gap(
+        state["persona_a"]["scores"],
+        state["persona_b"]["scores"],
+    )
+    return min(1.0, gap / 4.0)
 
-    def get_persona_bias(self) -> float:
-        """
-        计算当前 Persona 之间的偏差（用于前端显示）
 
-        0.0 = 两个 Persona 完全相同
-        1.0 = 两个 Persona 在关键维度上差异极大
-        """
-        gap = self._convergence_gap()
-        # gap 范围约 0~4，归一化到 0~1
-        return min(1.0, gap / 4.0)
+def _convergence_gap(scores_a: dict, scores_b: dict) -> float:
+    """计算关键维度上的平均差距"""
+    gaps = []
+    for dim in KEY_DIMS:
+        a = scores_a.get(dim, 3.0)
+        b = scores_b.get(dim, 3.0)
+        gaps.append(abs(a - b))
+    return sum(gaps) / len(gaps) if gaps else 0.0
 
-    def save(self):
-        """持久化到 JSON（按项目名隔离）"""
-        state_path = self._state_path()
-        data = {
-            "version": 1,
-            "converged": self.converged,
-            "persona_a": {
-                "name": self.persona_a_name,
-                "scores": self.persona_a.scores,
-            },
-            "persona_b": {
-                "name": self.persona_b_name,
-                "scores": self.persona_b.scores,
-            },
-        }
-        state_path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
 
-    @classmethod
-    def load_or_create(
-        cls,
-        project_name: str = "default",
-        persona_a_name: str = "稳健派",
-        persona_b_name: str = "现代派",
-    ) -> "PersonaState":
-        """从持久化恢复，或创建新的状态"""
-        safe_name = project_name.replace("/", "_").replace("\\", "_")
-        state_path = _STATES_DIR / f"{safe_name}.json"
+def _explore_random(scores: dict):
+    """随机探索：在 1-2 个维度上 ±0.5~1.0 扰动"""
+    available_dims = [d for d in DIMENSION_PRIORITY if d in scores]
+    if not available_dims:
+        return
 
-        if state_path.exists():
-            try:
-                data = json.loads(state_path.read_text(encoding="utf-8"))
-                state = cls(
-                    project_name=project_name,
-                    persona_a_name=data["persona_a"]["name"],
-                    persona_b_name=data["persona_b"]["name"],
-                )
-                # 恢复 scores（覆盖从 YAML 读取的初始值）
-                for dim, val in data["persona_a"]["scores"].items():
-                    state.persona_a.scores[dim] = val
-                for dim, val in data["persona_b"]["scores"].items():
-                    state.persona_b.scores[dim] = val
-                state.converged = data.get("converged", False)
-                return state
-            except Exception as e:
-                print(f"读取 Persona 状态失败: {e}，使用默认值")
+    n_dims = random.randint(1, min(2, len(available_dims)))
+    dims_to_change = random.sample(available_dims, n_dims)
 
-        return cls(project_name, persona_a_name, persona_b_name)
+    for dim in dims_to_change:
+        delta = random.choice([-1.0, -0.5, 0.5, 1.0])
+        scores[dim] = round(max(1.0, min(5.0, scores[dim] + delta)), 2)
 
-    @classmethod
-    def reset(cls, project_name: str = "default"):
-        """重置指定项目的状态文件"""
-        safe_name = project_name.replace("/", "_").replace("\\", "_")
-        state_path = _STATES_DIR / f"{safe_name}.json"
-        if state_path.exists():
-            state_path.unlink()
+
+def get_prompt_scores(state: dict, side: str) -> dict:
+    """
+    获取用于构建 prompt 的 Persona scores
+
+    Args:
+        state: persona state dict
+        side: "A" 或 "B"
+
+    Returns:
+        {name, scores} dict
+    """
+    key = "persona_a" if side == "A" else "persona_b"
+    return state[key]

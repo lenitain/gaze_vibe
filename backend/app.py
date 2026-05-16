@@ -26,7 +26,8 @@ from prompts import load_prompt
 # === 新架构模块 ===
 from llm_client import LLMClient, LLMError
 from prompt_builder import PromptBuilder, build_dual_answer_prompts
-from persona_state import PersonaState
+from persona_state import record_choice, initial_state, get_prompt_scores, get_persona_bias
+from persona_loader import PersonaLoader
 from schemas import DualAnswer, SubQuestions, AnswerSegment, CodeBlock, schema_to_function
 from sse_events import (
     create_segment_start, create_segment_end,
@@ -60,17 +61,8 @@ llm_client.on_record = lambda record: llm_logger.record_from_llm_record(record, 
 # 全局眼动数据处理器
 eye_processor = EyeTrackerProcessor()
 
-# Persona 动态状态（按项目名隔离）
-_persona_states: dict[str, "PersonaState"] = {}
 
-def get_persona_state(project_name: str = "default") -> "PersonaState":
-    """获取或创建项目的 Persona 状态"""
-    if project_name not in _persona_states:
-        _persona_states[project_name] = PersonaState.load_or_create(project_name)
-    return _persona_states[project_name]
-
-
-def generate_dual_answers(prompt, context_files=None, eye_data=None, project_name="default"):
+def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_state=None):
     """
     生成两个不同风格的答案
 
@@ -105,10 +97,23 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None, project_nam
         print("\n  无眼动数据，使用默认参数")
 
     # 2. 使用 PromptBuilder 组装 prompt（传入动态 Persona）
-    ps = get_persona_state(project_name)
+    if persona_state:
+        # 从前端传入的 state dict 构建 Persona 对象
+        pa_info = get_prompt_scores(persona_state, "A")
+        pb_info = get_prompt_scores(persona_state, "B")
+        pa = PersonaLoader.load(pa_info["name"])
+        pb = PersonaLoader.load(pb_info["name"])
+        for k, v in pa_info["scores"].items():
+            pa.scores[k] = v
+        for k, v in pb_info["scores"].items():
+            pb.scores[k] = v
+        persona_a_obj, persona_b_obj = pa, pb
+    else:
+        persona_a_obj, persona_b_obj = "稳健派", "现代派"
+
     prompt_a, prompt_b = build_dual_answer_prompts(
-        persona_a=ps.persona_a,
-        persona_b=ps.persona_b,
+        persona_a=persona_a_obj,
+        persona_b=persona_b_obj,
         detail_score=adjustments["detail_score"],
         explanation_score=adjustments["explanation_score"],
         confidence=eye_result.get("confidence", None) if eye_result else None,
@@ -232,7 +237,7 @@ def ask():
     context_files = data.get("contextFiles", [])
     experiment_mode = data.get("experimentMode", "full")
     eye_data = data.get("eyeData")
-    project_name = data.get("projectName", "default")
+    persona_state = data.get("personaState")
 
     if not prompt:
         raise APIError("请输入问题", 400)
@@ -254,7 +259,7 @@ def ask():
             # SSE: 子问题开始
             yield create_segment_start(i, len(sub_questions), sq["id"], sq.get("contextHint", ""))
 
-            result = generate_dual_answers(full_prompt, context_files, eye_data, project_name)
+            result = generate_dual_answers(full_prompt, context_files, eye_data, persona_state)
 
             # SSE: 推送眼动状态
             if result.get("eyeProcessing"):
@@ -296,7 +301,7 @@ def ask_batch():
     data = request.json
     prompt = data.get("prompt", "")
     context_files = data.get("contextFiles", [])
-    project_name = data.get("projectName", "default")
+    persona_state = data.get("personaState")
 
     if not prompt:
         raise APIError("请输入问题", 400)
@@ -310,7 +315,7 @@ def ask_batch():
         for i, sq in enumerate(sub_questions):
             yield create_segment_start(i, len(sub_questions), sq["id"], sq.get("contextHint", ""))
 
-            result = generate_dual_answers(sq["prompt"], context_files, project_name=project_name)
+            result = generate_dual_answers(sq["prompt"], context_files, persona_state=persona_state)
             yield create_text_delta(sq["id"], "detailed", result.get("answerA", ""))
             yield create_text_end(sq["id"], "detailed", result.get("answerA", ""))
             yield create_text_delta(sq["id"], "concise", result.get("answerB", ""))
@@ -331,7 +336,7 @@ def save_preference():
     eye_metrics = data.get("eyeMetrics")
     answer_a_length = data.get("answerALength", 0)
     answer_b_length = data.get("answerBLength", 0)
-    project_name = data.get("projectName", "default")
+    persona_state = data.get("personaState")
 
     processed_scores = None
     if eye_metrics:
@@ -379,22 +384,22 @@ def save_preference():
     print(f"  右→左切换: {preference.get('rightToLeft', 0)} 次")
 
     adjustments = eye_processor.get_prompt_adjustments()
-    ps = get_persona_state(project_name)
     print(f"\n  长期模型状态:")
     print(f"    累计轮次: {adjustments['round_count']}")
     print(f"    详细程度偏好: {adjustments['detail_score']:.4f}")
     print(f"    解释/代码偏好: {adjustments['explanation_score']:.4f}")
-    print(f"    Persona 偏差: {ps.get_persona_bias():.4f}")
 
     # 更新 Persona 状态
     final_choice = preference.get("finalChoice", None)
-    if final_choice in ("A", "B"):
-        ps.record_choice(final_choice)
-        ps.save()
-        persona_gap = ps.get_persona_bias()
-        print(f"    Persona 收敛度: {persona_gap:.4f} (已收敛={ps.converged})")
-        if ps.converged:
+    updated_state = None
+    if final_choice in ("A", "B") and persona_state:
+        updated_state = record_choice(persona_state, final_choice)
+        persona_gap = get_persona_bias(updated_state)
+        print(f"    Persona 偏差: {persona_gap:.4f} (已收敛={updated_state['converged']})")
+        if updated_state['converged']:
             print(f"    Persona 已收敛，未选中侧进入随机探索模式")
+    else:
+        print(f"    Persona 状态: 未更新（无选择或无传入状态）")
 
     print("─" * 60 + "\n")
 
@@ -407,7 +412,7 @@ def save_preference():
     print(f"    平均延迟: {summary['avg_latency_ms']}ms")
     print("─" * 60 + "\n")
 
-    return jsonify({"success": True})
+    return jsonify({"success": True, "personaState": updated_state})
 
 
 @app.route("/api/eye-model", methods=["GET"])
@@ -418,17 +423,11 @@ def get_eye_model():
 
 @app.route("/api/eye-model/reset", methods=["POST"])
 def reset_eye_model():
-    """重置眼动模型"""
+    """重置眼动模型（Persona 状态由前端自行删除）"""
     global eye_processor
-    data = request.get_json(silent=True) or {}
-    project_name = data.get("projectName", "default")
-
     eye_processor = EyeTrackerProcessor()
-    PersonaState.reset(project_name)
-    if project_name in _persona_states:
-        del _persona_states[project_name]
-    print(f"\n  眼动模型 + Persona 状态已重置 (项目: {project_name})\n")
-    return jsonify({"success": True})
+    print("\n  眼动模型已重置\n")
+    return jsonify({"success": True, "initialPersonaState": initial_state()})
 
 
 @app.route("/api/stats", methods=["GET"])
@@ -442,7 +441,7 @@ def get_stats():
             "explanation_score": eye_processor.long_term_explanation,
         },
         "persona": {
-            "projectName": list(_persona_states.keys()),
+            "note": "Persona 状态由前端管理，存储于项目根目录 persona_state.json",
         },
     })
 
