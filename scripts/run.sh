@@ -1,5 +1,5 @@
 #!/bin/bash
-# 使用 uv 运行 GazeVibe 实验数据分析脚本
+# GazeVibe 数据分析 — 一键运行所有分析脚本
 
 cd "$(dirname "$0")"
 
@@ -20,6 +20,23 @@ fi
 echo "安装依赖..."
 uv pip install -r requirements.txt
 
-# 运行分析脚本
-echo "开始分析实验数据..."
+echo ""
+echo "========================================"
+echo "  GazeVibe 数据分析"
+echo "========================================"
+echo ""
+
+# 运行实验数据分析（眼动指标验证）
+echo "1/3: 实验数据分析..."
 uv run python analyze_experiment.py
+
+# 运行 LLM 调用日志分析
+echo "2/3: LLM 调用日志分析..."
+uv run python analyze_llm_logs.py
+
+# 运行记忆系统分析
+echo "3/3: 记忆系统分析..."
+uv run python analyze_memory.py
+
+echo ""
+echo "所有分析完成！图表已保存到 docs/figures/"

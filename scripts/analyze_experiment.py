@@ -12,10 +12,8 @@ GazeVibe 实验数据分析脚本
 """
 
 import json
-import os
 import sys
 from pathlib import Path
-from datetime import datetime
 
 import pandas as pd
 import numpy as np
@@ -548,6 +546,52 @@ class ExperimentAnalyzer:
         print(f"  Chart saved: {self.figures_dir / 'dimension4_ema_convergence.svg'}")
         print()
 
+    def analyze_dimension5_persona_bias(self):
+        """验证维度5：Persona 偏差分析"""
+        print("=" * 60)
+        print("  验证维度5：Persona 偏差与偏好趋势")
+        print("=" * 60)
+
+        # 检查是否有 persona_bias 数据
+        if "adjustments" not in self.df.columns:
+            print("  无 persona_bias 数据（旧版本实验数据）")
+            return
+
+        biases = self.df["adjustments"].apply(
+            lambda x: x.get("persona_bias", 0.5) if isinstance(x, dict) else 0.5
+        )
+        print("\n  Persona 偏差 (0=现代派, 1=稳健派):")
+        print(f"    平均: {biases.mean():.4f}")
+        print(f"    中位: {biases.median():.4f}")
+        print(f"    范围: {biases.min():.4f} ~ {biases.max():.4f}")
+        print(f"    标准差: {biases.std():.4f}")
+
+        # 偏差趋势
+        if len(biases) > 1:
+            biases.plot(
+                title="Persona Bias Over Rounds",
+                xlabel="Round",
+                ylabel="Persona Bias (0=现代派, 1=稳健派)",
+                ylim=(0, 1),
+            )
+            import matplotlib.pyplot as plt
+            plt.tight_layout()
+            path = self.figures_dir / "dimension5_persona_bias.svg"
+            plt.savefig(path, format="svg")
+            plt.close()
+            print(f"  \n  Chart saved: {path}")
+
+            # 偏差方向：偏向 A 还是 B
+            pref_a = (biases > 0.5).sum()
+            pref_b = (biases < 0.5).sum()
+            neutral = (biases == 0.5).sum()
+            print("\n  偏好方向:")
+            print(f"    偏稳健派 (bias>0.5): {pref_a} 次 ({pref_a/len(biases)*100:.0f}%)")
+            print(f"    偏现代派 (bias<0.5): {pref_b} 次 ({pref_b/len(biases)*100:.0f}%)")
+            print(f"    中立: {neutral} 次")
+
+        print()
+
     def analyze_dimension6_mode_comparison(self):
         """验证维度6：模式对比分析"""
         print("=" * 60)
@@ -678,6 +722,7 @@ def main():
     analyzer.analyze_dimension2_normalization()
     analyzer.analyze_dimension3_prediction()
     analyzer.analyze_dimension4_ema_convergence()
+    analyzer.analyze_dimension5_persona_bias()
     analyzer.analyze_dimension6_mode_comparison()
 
     analyzer.generate_summary_report()
