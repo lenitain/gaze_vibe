@@ -26,6 +26,7 @@ from prompts import load_prompt
 # === 新架构模块 ===
 from llm_client import LLMClient, LLMError
 from prompt_builder import PromptBuilder, build_dual_answer_prompts
+from persona_state import PersonaState
 from schemas import DualAnswer, SubQuestions, AnswerSegment, CodeBlock, schema_to_function
 from sse_events import (
     create_segment_start, create_segment_end,
@@ -58,6 +59,9 @@ llm_client.on_record = lambda record: llm_logger.record_from_llm_record(record, 
 
 # 全局眼动数据处理器
 eye_processor = EyeTrackerProcessor()
+
+# 全局 Persona 动态状态
+persona_state = PersonaState.load_or_create()
 
 
 def generate_dual_answers(prompt, context_files=None, eye_data=None):
@@ -94,8 +98,10 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
     else:
         print("\n  无眼动数据，使用默认参数")
 
-    # 2. 使用 PromptBuilder 组装 prompt
+    # 2. 使用 PromptBuilder 组装 prompt（传入动态 Persona）
     prompt_a, prompt_b = build_dual_answer_prompts(
+        persona_a=persona_state.persona_a,
+        persona_b=persona_state.persona_b,
         detail_score=adjustments["detail_score"],
         explanation_score=adjustments["explanation_score"],
         confidence=eye_result.get("confidence", None) if eye_result else None,
@@ -367,6 +373,18 @@ def save_preference():
     print(f"    累计轮次: {adjustments['round_count']}")
     print(f"    详细程度偏好: {adjustments['detail_score']:.4f}")
     print(f"    解释/代码偏好: {adjustments['explanation_score']:.4f}")
+    print(f"    Persona 偏差: {persona_state.get_persona_bias():.4f}")
+
+    # 更新 Persona 状态
+    final_choice = preference.get("finalChoice", None)
+    if final_choice in ("A", "B"):
+        persona_state.record_choice(final_choice)
+        persona_state.save()
+        persona_gap = persona_state.get_persona_bias()
+        print(f"    Persona 收敛度: {persona_gap:.4f} (已收敛={persona_state.converged})")
+        if persona_state.converged:
+            print(f"    Persona 已收敛，未选中侧进入随机探索模式")
+
     print("─" * 60 + "\n")
 
     # 输出 LLM 统计
@@ -392,7 +410,10 @@ def reset_eye_model():
     """重置眼动模型"""
     global eye_processor
     eye_processor = EyeTrackerProcessor()
-    print("\n  眼动模型已重置\n")
+    PersonaState.reset()
+    global persona_state
+    persona_state = PersonaState.load_or_create()
+    print("\n  眼动模型 + Persona 状态已重置\n")
     return jsonify({"success": True})
 
 
@@ -405,6 +426,12 @@ def get_stats():
             "round_count": eye_processor.round_count,
             "detail_score": eye_processor.long_term_detail,
             "explanation_score": eye_processor.long_term_explanation,
+        },
+        "persona": {
+            "converged": persona_state.converged,
+            "bias": persona_state.get_persona_bias(),
+            "a_scores": persona_state.persona_a.scores,
+            "b_scores": persona_state.persona_b.scores,
         },
     })
 

@@ -43,14 +43,17 @@ class PromptBuilder:
 
     # ----- Persona 注入 -----
 
-    def with_persona(self, persona_name: str) -> "PromptBuilder":
+    def with_persona(self, persona) -> "PromptBuilder":
         """
         注入 Persona 身份
 
         Args:
-            persona_name: Persona 名称，如 "稳健派"、"现代派"
+            persona: Persona 对象，或 Persona 名称字符串
         """
-        self.persona = PersonaLoader.load(persona_name)
+        if isinstance(persona, str):
+            self.persona = PersonaLoader.load(persona)
+        else:
+            self.persona = persona
         return self
 
     # ----- 眼动调整 -----
@@ -207,7 +210,7 @@ class PromptBuilder:
 
 def build_answer_prompt(
     style: str,
-    persona_name: str | None = None,
+    persona=None,
     detail_score: float = 0.5,
     explanation_score: float = 0.5,
     confidence: float | None = None,
@@ -220,7 +223,7 @@ def build_answer_prompt(
 
     Args:
         style: "detailed" 或 "concise"
-        persona_name: Persona 名称（None=不注入）
+        persona: Persona 对象或名称字符串（None=不注入）
         detail_score: 眼动详细程度分数
         explanation_score: 眼动解释程度分数
         confidence: 置信度
@@ -231,8 +234,8 @@ def build_answer_prompt(
     base = "system_a" if style == "detailed" else "system_b"
     builder = PromptBuilder(base)
 
-    if persona_name:
-        builder.with_persona(persona_name)
+    if persona:
+        builder.with_persona(persona)
     if detail_score != 0.5 or explanation_score != 0.5:
         builder.with_eye_adjustment(detail_score, explanation_score, confidence)
     if context_files:
@@ -247,8 +250,8 @@ def build_answer_prompt(
 
 
 def build_dual_answer_prompts(
-    persona_a: str = "稳健派",
-    persona_b: str = "现代派",
+    persona_a="稳健派",
+    persona_b="现代派",
     detail_score: float = 0.5,
     explanation_score: float = 0.5,
     confidence: float | None = None,
@@ -271,7 +274,7 @@ def build_dual_answer_prompts(
         (prompt_a, prompt_b)
     """
     prompt_a = build_answer_prompt(
-        "detailed", persona_name=persona_a,
+        "detailed", persona=persona_a,
         detail_score=detail_score,
         explanation_score=explanation_score,
         confidence=confidence,
@@ -279,7 +282,7 @@ def build_dual_answer_prompts(
         history=history,
     )
     prompt_b = build_answer_prompt(
-        "concise", persona_name=persona_b,
+        "concise", persona=persona_b,
         detail_score=detail_score,
         explanation_score=explanation_score,
         confidence=confidence,

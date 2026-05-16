@@ -135,10 +135,11 @@ class Persona:
         # 价值观（按优先级排列）
         parts.append("你的价值观（按优先级从高到低）：")
         for dim in DIMENSION_PRIORITY:
-            score = self.scores.get(dim, 3)
-            desc = DIMENSION_DESCRIPTIONS.get(dim, {}).get(score, "")
+            score = self.scores.get(dim, 3.0)
+            int_score = round(score)
+            desc = DIMENSION_DESCRIPTIONS.get(dim, {}).get(int_score, "")
             label = DIMENSION_LABELS.get(dim, dim)
-            parts.append(f"{DIMENSION_PRIORITY.index(dim) + 1}. {label} ({score}/5) — {desc}")
+            parts.append(f"{DIMENSION_PRIORITY.index(dim) + 1}. {label} ({score:.1f}/5) — {desc}")
 
         parts.append("")
 
