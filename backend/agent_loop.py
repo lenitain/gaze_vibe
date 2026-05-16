@@ -12,6 +12,7 @@ Agent Loop — 多轮 tool calling
 import json
 from dataclasses import dataclass, field
 
+from config import AGENT_MAX_TOKENS, AGENT_MAX_TURNS, AGENT_TEMPERATURE, LLM_MODEL
 from llm_client import LLMClient, LLMError
 
 
@@ -36,27 +37,15 @@ class AgentResult:
 class AgentLoop:
     """
     多轮 tool calling 循环
-
-    每次迭代：
-    1. 调用 LLM（messages + tools）
-    2. 如果有 tool_call → 执行 → 追加消息 → 回到 1
-    3. 如果无 → 返回最终文本
     """
 
     def __init__(
         self,
         llm: LLMClient,
         tools: list,
-        max_turns: int = 6,
-        model: str = "deepseek-chat",
+        max_turns: int = AGENT_MAX_TURNS,
+        model: str = LLM_MODEL,
     ):
-        """
-        Args:
-            llm: LLMClient 实例
-            tools: Tool 对象列表（tool_agent.Tool）
-            max_turns: 最大迭代轮数
-            model: 使用的模型名
-        """
         self.llm = llm
         self.tools = {t.name: t for t in tools}
         self.max_turns = max_turns
@@ -68,17 +57,6 @@ class AgentLoop:
         user_prompt: str,
         context_messages: list[dict] | None = None,
     ) -> dict:
-        """
-        执行 agent
-
-        Args:
-            system_prompt: 系统 prompt
-            user_prompt: 用户问题
-            context_messages: 可选的上下文消息（如 RAG 检索结果）
-
-        Returns:
-            {"text": str, "tool_calls": list, "turn_count": int, "success": bool}
-        """
         messages = [{"role": "system", "content": system_prompt}]
         if context_messages:
             messages.extend(context_messages)
@@ -90,13 +68,13 @@ class AgentLoop:
         for turn in range(self.max_turns):
             try:
                 response = self.llm.generate(
-                    system_prompt="",  # 放在 messages 里
+                    system_prompt="",
                     user_prompt="",
                     messages=messages,
                     tools=self._get_tool_schemas(),
                     tool_choice="auto",
-                    temperature=0.3,
-                    max_tokens=4000,
+                    temperature=AGENT_TEMPERATURE,
+                    max_tokens=AGENT_MAX_TOKENS,
                 )
             except LLMError as e:
                 return {

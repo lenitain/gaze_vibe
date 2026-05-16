@@ -19,7 +19,19 @@ from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
-from config import ALPHA, MEMORY_TOP_K
+from config import (
+    ALPHA,
+    ANSWER_MAX_TOKENS,
+    ANSWER_TEMPERATURE,
+    LLM_BASE_URL,
+    LLM_MAX_RETRIES,
+    LLM_MODEL,
+    LLM_TIMEOUT,
+    LOG_DIR,
+    MEMORY_TOP_K,
+    SPLIT_MAX_TOKENS,
+    SPLIT_TEMPERATURE,
+)
 from errors import APIError, register_error_handlers
 from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
 
@@ -60,15 +72,15 @@ register_error_handlers(app)
 
 # LLM 客户端 (替代裸 openai client)
 llm_client = LLMClient(
-    model="deepseek-chat",
+    model=LLM_MODEL,
     api_key=os.getenv("DEEPSEEK_API_KEY"),
-    base_url="https://api.deepseek.com",
-    max_retries=2,
-    timeout=120,
+    base_url=LLM_BASE_URL,
+    max_retries=LLM_MAX_RETRIES,
+    timeout=LLM_TIMEOUT,
 )
 
 # LLM 调用日志
-llm_logger = LLMLogger(log_dir="logs")
+llm_logger = LLMLogger(log_dir=LOG_DIR)
 # 注册回调：每次 LLM 调用自动记录
 llm_client.on_record = lambda record: llm_logger.record_from_llm_record(record, caller="generate_dual_answers")
 
@@ -160,8 +172,8 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_sta
         response_a = llm_client.generate(
             system_prompt=prompt_a,
             user_prompt=prompt,
-            temperature=0.7,
-            max_tokens=3000,
+            temperature=ANSWER_TEMPERATURE,
+            max_tokens=ANSWER_MAX_TOKENS,
         )
         answer_a = response_a.text
         print(f"    ✓ 详细解答生成完成 ({len(answer_a)} 字符, {response_a.usage.total_tokens} tokens)")
@@ -170,8 +182,8 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_sta
         response_b = llm_client.generate(
             system_prompt=prompt_b,
             user_prompt=prompt,
-            temperature=0.7,
-            max_tokens=3000,
+            temperature=ANSWER_TEMPERATURE,
+            max_tokens=ANSWER_MAX_TOKENS,
         )
         answer_b = response_b.text
         print(f"    ✓ 简洁解答生成完成 ({len(answer_b)} 字符, {response_b.usage.total_tokens} tokens)")
@@ -237,8 +249,8 @@ def split_user_question(prompt, context_files, max_sub_questions=4):
         response = llm_client.generate(
             system_prompt=split_system,
             user_prompt=full_prompt,
-            temperature=0.3,
-            max_tokens=2000,
+            temperature=SPLIT_TEMPERATURE,
+            max_tokens=SPLIT_MAX_TOKENS,
         )
         raw = response.text.strip()
 
@@ -540,7 +552,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("  GazeVibe 后端服务 (AI 工程架构 v2)")
     print("=" * 60)
-    print("  LLMClient: deepseek-chat (retry=2, timeout=120s)")
+    print(f"  LLMClient: {LLM_MODEL} (retry={LLM_MAX_RETRIES}, timeout={LLM_TIMEOUT}s)")
     print("  PromptBuilder: 动态组装 + 眼动调整")
     print(f"  EyeTracker: EMA α = {ALPHA}")
     print(f"  LLMLogger: {llm_logger.log_dir / '*.jsonl'}")

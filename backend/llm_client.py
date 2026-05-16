@@ -22,6 +22,15 @@ from typing import Any
 import openai
 from openai import OpenAI
 
+from config import (
+    ANSWER_MAX_TOKENS,
+    ANSWER_TEMPERATURE,
+    LLM_BASE_URL,
+    LLM_MAX_RETRIES,
+    LLM_MODEL,
+    LLM_TIMEOUT,
+)
+
 # ===== 数据类型 =====
 
 @dataclass
@@ -61,17 +70,16 @@ class LLMResponse:
 
 # ===== 配置 =====
 
-DEFAULT_MODEL = "deepseek-chat"
-DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MAX_RETRIES = 2
-DEFAULT_TIMEOUT = 120
-DEFAULT_TEMPERATURE = 0.7
-DEFAULT_MAX_TOKENS = 3000
+DEFAULT_MODEL = LLM_MODEL
+DEFAULT_BASE_URL = LLM_BASE_URL
+DEFAULT_MAX_RETRIES = LLM_MAX_RETRIES
+DEFAULT_TIMEOUT = LLM_TIMEOUT
+DEFAULT_TEMPERATURE = ANSWER_TEMPERATURE
+DEFAULT_MAX_TOKENS = ANSWER_MAX_TOKENS
 
 # fallback 模型链 (按优先级)
 FALLBACK_MODELS = [
-    "deepseek-chat",
-    # 可扩展其它模型
+    LLM_MODEL,
 ]
 
 

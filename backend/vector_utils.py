@@ -6,6 +6,8 @@
 
 import numpy as np
 
+from config import EMBEDDING_MODEL
+
 # 全局 embedding client，由 app.py 在初始化时设置
 _embed_client = None
 
@@ -22,7 +24,7 @@ def embed_text(text: str) -> list[float]:
         raise RuntimeError("embedding client 未初始化，请先调用 init_embedding_client()")
 
     response = _embed_client.embeddings.create(
-        model="text-embedding-ada-002",
+        model=EMBEDDING_MODEL,
         input=text,
     )
     return response.data[0].embedding
@@ -36,7 +38,7 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
         raise RuntimeError("embedding client 未初始化")
 
     response = _embed_client.embeddings.create(
-        model="text-embedding-ada-002",
+        model=EMBEDDING_MODEL,
         input=texts,
     )
     sorted_data = sorted(response.data, key=lambda x: x.index)

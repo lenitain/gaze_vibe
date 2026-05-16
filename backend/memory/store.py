@@ -10,10 +10,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from config import MEMORY_DATA_DIR
 from memory.types import MemoryItem, MemoryType
 from vector_utils import cosine_similarity, embed_text
 
-DATA_DIR = Path(__file__).parent.parent / "memory_data"
+DATA_DIR = Path(__file__).parent.parent / MEMORY_DATA_DIR
 
 
 class MemoryStore:

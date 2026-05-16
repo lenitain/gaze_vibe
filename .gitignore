@@ -42,3 +42,4 @@ Thumbs.db
 /tmp/
 backend/memory_data/
 backend/persona_states/
+uv.lock
