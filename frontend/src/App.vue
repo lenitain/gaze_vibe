@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import AnswerPanel from './components/AnswerPanel.vue'
 import ChatInput from './components/ChatInput.vue'
 import EyeTracker from './components/EyeTracker.vue'
@@ -245,12 +245,17 @@ async function handleSubmit(prompt) {
           }
           segmentsArrived++
 
-          // 首个内容到达后启动眼动
+          // 首个内容到达 → 关闭 loading，内容立即显示
+          isLoading.value = false
+
+          // 等待 DOM 渲染内容后，再启动眼动追踪（三者同时）
           if (!eyeTrackingStarted && experimentMode.value !== 'control' && eyeTrackerRef.value && !isEyeTracking.value) {
-            eyeTrackerRef.value.startTracking()
-            isEyeTracking.value = true
-            eyeTrackingStarted = true
-            decisionStartTime.value = Date.now()
+            nextTick(() => {
+              eyeTrackerRef.value.startTracking()
+              isEyeTracking.value = true
+              eyeTrackingStarted = true
+              decisionStartTime.value = Date.now()
+            })
           }
         }
 

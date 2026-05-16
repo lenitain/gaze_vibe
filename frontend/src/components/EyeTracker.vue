@@ -112,6 +112,9 @@ async function initWebGazer() {
   webgazer.saveDataAcrossSessions = false
   webgazer.showPredictionPoints(false)
 
+  // 隐藏 WebGazer 默认的大摄像头预览，只用自定义的小指示器
+  webgazer.showVideo(false)
+
   console.log('WebGazer 初始化完成')
 }
 
