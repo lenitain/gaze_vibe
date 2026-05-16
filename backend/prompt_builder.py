@@ -1,19 +1,20 @@
 """
 动态 System Prompt 组装器
 
-替代当前 adjust_system_prompt() 手写拼接的方式，
-用链式调用组装 prompt 组件：
+链式调用组装 prompt 组件：
 
     prompt = PromptBuilder("system_a") \\
+        .with_persona("稳健派") \\
         .with_eye_adjustment(detail_score=0.72, explanation_score=0.64) \\
         .with_context(files) \\
-        .with_additional_notes(["用户是 Python 开发者", "关注性能"]) \\
         .build()
 """
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 from prompts import load_prompt
+from persona_loader import PersonaLoader, Persona
 
 
 @dataclass
@@ -35,9 +36,22 @@ class PromptBuilder:
     def __init__(self, base_name: str):
         self.base_name = base_name
         self.components: list[PromptComponent] = []
+        self.persona: Optional[Persona] = None
 
         # 额外的说明（自由的文本块）
         self.additional_notes: list[str] = []
+
+    # ----- Persona 注入 -----
+
+    def with_persona(self, persona_name: str) -> "PromptBuilder":
+        """
+        注入 Persona 身份
+
+        Args:
+            persona_name: Persona 名称，如 "稳健派"、"现代派"
+        """
+        self.persona = PersonaLoader.load(persona_name)
+        return self
 
     # ----- 眼动调整 -----
 
@@ -131,9 +145,6 @@ class PromptBuilder:
     def with_output_schema(self, schema_description: str) -> "PromptBuilder":
         """
         添加结构化输出指令
-
-        当使用 function calling 时，model 不需要看到 schema 定义（由 API 参数传递）。
-        但添加提示有助于 model 生成更符合预期的内容。
         """
         self.additional_notes.append(f"\n请按照以下结构组织输出:\n{schema_description}")
         return self
@@ -145,25 +156,33 @@ class PromptBuilder:
         按 weight 排序组装所有组件
 
         组装顺序:
-        1. base prompt (weight=0) — 从 prompts/ 加载
-        2. eye adjustment (weight=0.3) — 眼动偏好
-        3. history (weight=0.4) — 对话历史
-        4. context (weight=0.6) — 项目上下文
-        5. additional notes (weight=1.0) — 自由说明
+        1. persona identity (如果设置了)
+        2. base prompt (weight=0) — 从 prompts/ 加载
+        3. eye adjustment (weight=0.3) — 眼动偏好
+        4. history (weight=0.4) — 对话历史
+        5. context (weight=0.6) — 项目上下文
+        6. additional notes (weight=1.0) — 自由说明
         """
         base = load_prompt(self.base_name)
 
         # 按 weight 排序
         sorted_comps = sorted(self.components, key=lambda c: c.weight)
 
-        parts = [base]
+        parts = []
+        if self.persona:
+            parts.append(self.persona.build_system_prompt())
+            parts.append("")
+            parts.append("=" * 60)
+            parts.append("")
+
+        parts.append(base)
         for comp in sorted_comps:
             parts.append(comp.content)
 
         if self.additional_notes:
             parts.append("\n\n[附加说明]\n" + "\n".join(f"- {note}" for note in self.additional_notes))
 
-        return "".join(parts)
+        return "\n".join(parts)
 
     def build_dual(self) -> tuple[str, str]:
         """
@@ -171,15 +190,12 @@ class PromptBuilder:
 
         返回 (prompt_a, prompt_b)
         """
-        # 额外说明在两个 prompt 中都保留
         extra_components = [c for c in self.components if c.key not in ("eye_adjustment",)]
 
-        # A: 详细
         prompt_a = self.base_name + "_a" if self.base_name == "system" else self.base_name
         if not self.base_name.endswith("_a"):
             prompt_a = self.base_name
 
-        # B: 简洁
         prompt_b = self.base_name + "_b" if self.base_name == "system" else self.base_name
         if not self.base_name.endswith("_b"):
             prompt_b = self.base_name
@@ -191,6 +207,7 @@ class PromptBuilder:
 
 def build_answer_prompt(
     style: str,
+    persona_name: str | None = None,
     detail_score: float = 0.5,
     explanation_score: float = 0.5,
     confidence: float | None = None,
@@ -203,6 +220,7 @@ def build_answer_prompt(
 
     Args:
         style: "detailed" 或 "concise"
+        persona_name: Persona 名称（None=不注入）
         detail_score: 眼动详细程度分数
         explanation_score: 眼动解释程度分数
         confidence: 置信度
@@ -213,6 +231,8 @@ def build_answer_prompt(
     base = "system_a" if style == "detailed" else "system_b"
     builder = PromptBuilder(base)
 
+    if persona_name:
+        builder.with_persona(persona_name)
     if detail_score != 0.5 or explanation_score != 0.5:
         builder.with_eye_adjustment(detail_score, explanation_score, confidence)
     if context_files:
@@ -227,6 +247,8 @@ def build_answer_prompt(
 
 
 def build_dual_answer_prompts(
+    persona_a: str = "稳健派",
+    persona_b: str = "现代派",
     detail_score: float = 0.5,
     explanation_score: float = 0.5,
     confidence: float | None = None,
@@ -234,11 +256,34 @@ def build_dual_answer_prompts(
     history: list[dict] | None = None,
 ) -> tuple[str, str]:
     """
-    同时构建 A/B 两个 prompt
+    同时构建 A/B 两个 prompt，各使用不同的 Persona
+
+    Args:
+        persona_a: Answer A 的 Persona（默认稳健派）
+        persona_b: Answer B 的 Persona（默认现代派）
+        detail_score: 眼动详细程度分数
+        explanation_score: 眼动解释程度分数
+        confidence: 置信度
+        context_files: 项目文件上下文
+        history: 对话历史
 
     Returns:
         (prompt_a, prompt_b)
     """
-    prompt_a = build_answer_prompt("detailed", detail_score, explanation_score, confidence, context_files, history)
-    prompt_b = build_answer_prompt("concise", detail_score, explanation_score, confidence, context_files, history)
+    prompt_a = build_answer_prompt(
+        "detailed", persona_name=persona_a,
+        detail_score=detail_score,
+        explanation_score=explanation_score,
+        confidence=confidence,
+        context_files=context_files,
+        history=history,
+    )
+    prompt_b = build_answer_prompt(
+        "concise", persona_name=persona_b,
+        detail_score=detail_score,
+        explanation_score=explanation_score,
+        confidence=confidence,
+        context_files=context_files,
+        history=history,
+    )
     return prompt_a, prompt_b

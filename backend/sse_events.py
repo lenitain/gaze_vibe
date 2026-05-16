@@ -147,6 +147,7 @@ class EyeAdjustment(SSEEvent):
     type: str = "eye_adjustment"
     detail_score: float = 0.5
     explanation_score: float = 0.5
+    persona_bias: float = 0.5
     confidence: float = 0.0
     round_count: int = 0
     preferred_side: str | None = None
@@ -156,6 +157,7 @@ class EyeAdjustment(SSEEvent):
             "type": self.type,
             "detailScore": self.detail_score,
             "explanationScore": self.explanation_score,
+            "personaBias": self.persona_bias,
             "confidence": self.confidence,
             "roundCount": self.round_count,
             "preferredSide": self.preferred_side,
@@ -202,11 +204,15 @@ def create_text_end(segment_id: str, style: str, full_text: str, latency_ms: flo
     return TextEnd(segment_id=segment_id, style=style, full_text=full_text, latency_ms=latency_ms).to_sse()
 
 
-def create_eye_adjustment(detail: float, explanation: float, confidence: float, round_count: int) -> str:
+def create_eye_adjustment(
+    detail: float, explanation: float, persona_bias: float,
+    confidence: float, round_count: int
+) -> str:
     preferred = "A" if detail > 0.5 else "B" if detail < 0.5 else None
     return EyeAdjustment(
         detail_score=detail,
         explanation_score=explanation,
+        persona_bias=persona_bias,
         confidence=confidence,
         round_count=round_count,
         preferred_side=preferred,

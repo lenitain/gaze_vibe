@@ -12,7 +12,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from config import ALPHA, INITIAL_DETAIL, INITIAL_EXPLANATION, MIN_EYE_TIME
+from config import ALPHA, INITIAL_DETAIL, INITIAL_EXPLANATION, INITIAL_PERSONA_BIAS, MIN_EYE_TIME
 
 
 class EyeTrackerProcessor:
@@ -30,6 +30,7 @@ class EyeTrackerProcessor:
         # 长期模型
         self.long_term_detail = INITIAL_DETAIL
         self.long_term_explanation = INITIAL_EXPLANATION
+        self.long_term_persona_bias = INITIAL_PERSONA_BIAS  # Persona 偏好 (0=现代派, 1=稳健派)
         # 轮次计数
         self.round_count = 0
         # 历史记录
@@ -77,6 +78,7 @@ class EyeTrackerProcessor:
                 "thoughts": thoughts,
                 "detail_score": self.long_term_detail,
                 "explanation_score": self.long_term_explanation,
+                "persona_bias": self.long_term_persona_bias,
             }
         thoughts.append("  - 数据有效 ✓")
         thoughts.append("")
@@ -120,6 +122,7 @@ class EyeTrackerProcessor:
             "thoughts": thoughts,
             **final_scores,
             "current_scores": current_scores,
+            "persona_bias": self.long_term_persona_bias,
         }
 
     def _extract_metrics(self, eye_data: dict) -> dict:
@@ -371,6 +374,27 @@ class EyeTrackerProcessor:
         )
         thoughts.append(f"    结果: {self.long_term_explanation:.4f}")
 
+        # 计算并更新 persona_bias（双维度合并为单维度）
+        current_persona_bias = (
+            current_scores["detail_score"] * 0.5 +
+            current_scores["explanation_score"] * 0.5
+        )
+        old_persona_bias = self.long_term_persona_bias
+        self.long_term_persona_bias = (
+            alpha * current_persona_bias + (1 - alpha) * self.long_term_persona_bias
+        )
+        thoughts.append(f"  persona_bias EMA 更新:")
+        thoughts.append(
+            f"    公式: persona_bias = 0.5 × detail + 0.5 × explanation"
+        )
+        thoughts.append(
+            f"    当前轮: detail={current_scores['detail_score']:.4f}, explanation={current_scores['explanation_score']:.4f} → {current_persona_bias:.4f}"
+        )
+        thoughts.append(
+            f"    EMA: {alpha} × {current_persona_bias:.4f} + (1 - {alpha}) × {old_persona_bias:.4f}"
+        )
+        thoughts.append(f"    结果: {self.long_term_persona_bias:.4f} (0=现代派, 1=稳健派)")
+
     def _calculate_final_scores(self, thoughts: list) -> dict:
         """
         计算最终分数
@@ -387,15 +411,18 @@ class EyeTrackerProcessor:
         # 但为了展示效果，我们使用加权混合
         final_detail = self.long_term_detail
         final_explanation = self.long_term_explanation
+        final_persona_bias = self.long_term_persona_bias
 
         thoughts.append(f"  β (实时权重) = {beta:.2f}")
         thoughts.append(f"  最终分数 = 长期模型 (已通过 EMA 融合实时数据)")
         thoughts.append(f"    detail_score = {final_detail:.4f}")
         thoughts.append(f"    explanation_score = {final_explanation:.4f}")
+        thoughts.append(f"    persona_bias = {final_persona_bias:.4f} (0=现代派, 1=稳健派)")
 
         return {
             "detail_score": final_detail,
             "explanation_score": final_explanation,
+            "persona_bias": final_persona_bias,
             "beta": beta,
             "round_count": self.round_count,
         }
@@ -433,6 +460,7 @@ class EyeTrackerProcessor:
         return {
             "detail_score": self.long_term_detail,
             "explanation_score": self.long_term_explanation,
+            "persona_bias": self.long_term_persona_bias,
             "round_count": self.round_count,
         }
 
@@ -441,6 +469,7 @@ class EyeTrackerProcessor:
         return {
             "long_term_detail": self.long_term_detail,
             "long_term_explanation": self.long_term_explanation,
+            "long_term_persona_bias": self.long_term_persona_bias,
             "round_count": self.round_count,
             "history": self.history,
         }
@@ -452,6 +481,9 @@ class EyeTrackerProcessor:
         processor.long_term_detail = data.get("long_term_detail", INITIAL_DETAIL)
         processor.long_term_explanation = data.get(
             "long_term_explanation", INITIAL_EXPLANATION
+        )
+        processor.long_term_persona_bias = data.get(
+            "long_term_persona_bias", INITIAL_PERSONA_BIAS
         )
         processor.round_count = data.get("round_count", 0)
         processor.history = data.get("history", [])

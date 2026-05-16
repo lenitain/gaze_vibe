@@ -248,6 +248,7 @@ def ask():
                 yield create_eye_adjustment(
                     detail=ep.get("detail_score", 0.5),
                     explanation=ep.get("explanation_score", 0.5),
+                    persona_bias=ep.get("persona_bias", 0.5),
                     confidence=ep.get("confidence", 0),
                     round_count=eye_processor.round_count,
                 )
