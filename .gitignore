@@ -1,9 +1,40 @@
-/backend/.env
-/backend/.venv/
-/backend/experiment_data.jsonl
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.ruff_cache/
+.pytest_cache/
+
+# Virtual environment
+.venv/
+venv/
+.env/
+
+# Environment & config
+backend/.env
+backend/.venv/
+
+# Data & logs
+backend/experiment_data.jsonl
+backend/logs/
+*.log
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
 /docs/
-/.ruff_cache/
-/frontend/dist/
-/frontend/node_modules/
-/backend/logs/
-**/__pycache__/
+/tmp/

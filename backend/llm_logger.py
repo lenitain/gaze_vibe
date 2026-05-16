@@ -4,15 +4,12 @@ LLM 调用日志
 记录每次 LLM 调用的完整信息，用于调试、成本追踪和性能分析。
 """
 
-import os
-import json
 import csv
-import io
-from pathlib import Path
+import json
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
-from dataclasses import dataclass, field, asdict
-
 
 # ===== 日志记录 =====
 

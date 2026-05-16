@@ -16,15 +16,11 @@ Agent Loop:
 4. LLM 分析结果，决定下一步（继续调用 tool 或输出最终答案）
 """
 
-import os
-import json
-import fnmatch
-from pathlib import Path
-from typing import Any, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from llm_client import LLMClient, LLMResponse, LLMError
-
+from llm_client import LLMClient, LLMError
 
 # ===== Tool 定义 =====
 

@@ -10,11 +10,10 @@
         .build()
 """
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
+from persona_loader import Persona, PersonaLoader
 from prompts import load_prompt
-from persona_loader import PersonaLoader, Persona
 
 
 @dataclass
@@ -36,7 +35,7 @@ class PromptBuilder:
     def __init__(self, base_name: str):
         self.base_name = base_name
         self.components: list[PromptComponent] = []
-        self.persona: Optional[Persona] = None
+        self.persona: Persona | None = None
 
         # 额外的说明（自由的文本块）
         self.additional_notes: list[str] = []
@@ -193,8 +192,6 @@ class PromptBuilder:
 
         返回 (prompt_a, prompt_b)
         """
-        extra_components = [c for c in self.components if c.key not in ("eye_adjustment",)]
-
         prompt_a = self.base_name + "_a" if self.base_name == "system" else self.base_name
         if not self.base_name.endswith("_a"):
             prompt_a = self.base_name

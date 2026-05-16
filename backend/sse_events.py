@@ -18,10 +18,7 @@ SSE 流式事件协议
 """
 
 import json
-from typing import Any
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
-
+from dataclasses import dataclass, field
 
 # ===== 事件数据类型 =====
 

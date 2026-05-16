@@ -11,16 +11,16 @@ LLM 客户端层
 - 调用日志回调
 """
 
+import json
 import os
 import time
-import json
-from typing import Any, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 import openai
 from openai import OpenAI
-
 
 # ===== 数据类型 =====
 

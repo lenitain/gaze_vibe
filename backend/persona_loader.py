@@ -11,10 +11,8 @@ Persona 加载器
     names = PersonaLoader.list_personas()
 """
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 import yaml
 

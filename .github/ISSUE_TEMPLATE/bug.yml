@@ -1,0 +1,44 @@
+name: Bug Report
+description: 提交 Bug 以帮助改进
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 清晰描述 Bug 的表现
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 如何复现此 Bug
+      placeholder: |
+        1. 打开...
+        2. 点击...
+        3. 出现...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 应该发生什么
+
+  - type: input
+    id: logs
+    attributes:
+      label: 后端日志 / 浏览器控制台
+      description: 如有错误信息请贴在这里
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 实验模式
+      options:
+        - full
+        - manual
+        - control

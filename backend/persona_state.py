@@ -12,7 +12,8 @@ Persona 动态调整（纯数据变换，无文件 I/O）
 """
 
 import random
-from persona_loader import PersonaLoader, Persona, DIMENSION_PRIORITY
+
+from persona_loader import DIMENSION_PRIORITY, PersonaLoader
 
 # 关键维度用于收敛检测
 KEY_DIMS = [

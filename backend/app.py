@@ -10,31 +10,34 @@ AI 工程架构：
 - LLMLogger: 调用日志与上下文管理
 """
 
+import json
 import os
 import re
-import json
 from datetime import datetime
+
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, Response
+from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
 from config import ALPHA
-from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
 from errors import APIError, register_error_handlers
-from prompts import load_prompt
+from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
 
 # === 新架构模块 ===
 from llm_client import LLMClient, LLMError
-from prompt_builder import PromptBuilder, build_dual_answer_prompts
-from persona_state import record_choice, initial_state, get_prompt_scores, get_persona_bias
+from llm_logger import LLMLogger
 from persona_loader import PersonaLoader
-from schemas import DualAnswer, SubQuestions, AnswerSegment, CodeBlock, schema_to_function
+from persona_state import get_persona_bias, get_prompt_scores, initial_state, record_choice
+from prompt_builder import build_dual_answer_prompts
+from prompts import load_prompt
 from sse_events import (
-    create_segment_start, create_segment_end,
-    create_text_delta, create_text_end,
-    create_eye_adjustment, create_done, create_error,
+    create_done,
+    create_eye_adjustment,
+    create_segment_end,
+    create_segment_start,
+    create_text_delta,
+    create_text_end,
 )
-from llm_logger import LLMLogger, truncate_context
 
 load_dotenv()
 
@@ -90,7 +93,7 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_sta
                 "detail_score": current.get("detail_score", eye_result["detail_score"]),
                 "explanation_score": current.get("explanation_score", eye_result["explanation_score"]),
             }
-            print(f"\n  调整参数:")
+            print("\n  调整参数:")
             print(f"    detail_score = {adjustments['detail_score']:.4f}")
             print(f"    explanation_score = {adjustments['explanation_score']:.4f}")
     else:
@@ -384,7 +387,7 @@ def save_preference():
     print(f"  右→左切换: {preference.get('rightToLeft', 0)} 次")
 
     adjustments = eye_processor.get_prompt_adjustments()
-    print(f"\n  长期模型状态:")
+    print("\n  长期模型状态:")
     print(f"    累计轮次: {adjustments['round_count']}")
     print(f"    详细程度偏好: {adjustments['detail_score']:.4f}")
     print(f"    解释/代码偏好: {adjustments['explanation_score']:.4f}")
@@ -397,14 +400,14 @@ def save_preference():
         persona_gap = get_persona_bias(updated_state)
         print(f"    Persona 偏差: {persona_gap:.4f} (已收敛={updated_state['converged']})")
         if updated_state['converged']:
-            print(f"    Persona 已收敛，未选中侧进入随机探索模式")
+            print("    Persona 已收敛，未选中侧进入随机探索模式")
     else:
-        print(f"    Persona 状态: 未更新（无选择或无传入状态）")
+        print("    Persona 状态: 未更新（无选择或无传入状态）")
 
     print("─" * 60 + "\n")
 
     # 输出 LLM 统计
-    print(f"\n  LLM 调用统计:")
+    print("\n  LLM 调用统计:")
     summary = llm_logger.session_summary()
     print(f"    总调用: {summary['total_calls']}")
     print(f"    成功: {summary['successful']}")
@@ -465,11 +468,11 @@ if __name__ == "__main__":
     print("=" * 60)
     print("  GazeVibe 后端服务 (AI 工程架构 v2)")
     print("=" * 60)
-    print(f"  LLMClient: deepseek-chat (retry=2, timeout=120s)")
-    print(f"  PromptBuilder: 动态组装 + 眼动调整")
+    print("  LLMClient: deepseek-chat (retry=2, timeout=120s)")
+    print("  PromptBuilder: 动态组装 + 眼动调整")
     print(f"  EyeTracker: EMA α = {ALPHA}")
     print(f"  LLMLogger: {llm_logger.log_dir / '*.jsonl'}")
-    print(f"  访问 http://localhost:8000/api/health 检查状态")
-    print(f"  访问 http://localhost:8000/api/stats 查看统计")
+    print("  访问 http://localhost:8000/api/health 检查状态")
+    print("  访问 http://localhost:8000/api/stats 查看统计")
     print("=" * 60)
     app.run(host="0.0.0.0", port=8000, debug=True, use_reloader=False)

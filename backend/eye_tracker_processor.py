@@ -8,9 +8,7 @@
 理论依据参考: docs/eye-tracking-references.md
 """
 
-import json
 from datetime import datetime
-from typing import Optional
 
 from config import ALPHA, INITIAL_DETAIL, INITIAL_EXPLANATION, INITIAL_PERSONA_BIAS, MIN_EYE_TIME
 
@@ -195,10 +193,10 @@ class EyeTrackerProcessor:
         else:
             normalized_gaze_bias = 0.5
 
-        thoughts.append(f"    原始数据:")
+        thoughts.append("    原始数据:")
         thoughts.append(f"      timeOnA = {time_on_a}ms, answerALength = {len_a} 字符")
         thoughts.append(f"      timeOnB = {time_on_b}ms, answerBLength = {len_b} 字符")
-        thoughts.append(f"    归一化计算:")
+        thoughts.append("    归一化计算:")
         thoughts.append(
             f"      timePerCharA = {time_on_a} / {len_a} = {time_per_char_a:.4f} ms/char"
         )
@@ -251,7 +249,7 @@ class EyeTrackerProcessor:
         detail_score = (
             0.5 * normalized_gaze_bias + 0.3 * regression_score + 0.2 * switch_score
         )
-        thoughts.append(f"    ────────────────────────────")
+        thoughts.append("    ────────────────────────────")
         thoughts.append(f"    detail_score = {detail_score:.4f}")
         thoughts.append(
             f"    (0.5 × {normalized_gaze_bias:.4f} + 0.3 × {regression_score:.4f} + 0.2 × {switch_score:.4f})"
@@ -328,7 +326,7 @@ class EyeTrackerProcessor:
         explanation_score = (
             0.4 * final_focus_ratio + 0.3 * first_score + 0.3 * variance_adjusted
         )
-        thoughts.append(f"    ────────────────────────────")
+        thoughts.append("    ────────────────────────────")
         thoughts.append(f"    explanation_score = {explanation_score:.4f}")
         thoughts.append(
             f"    (0.4 × {final_focus_ratio:.4f} + 0.3 × {first_score:.4f} + 0.3 × {variance_adjusted:.4f})"
@@ -356,7 +354,7 @@ class EyeTrackerProcessor:
         self.long_term_detail = (
             alpha * current_scores["detail_score"] + (1 - alpha) * self.long_term_detail
         )
-        thoughts.append(f"  detail_score EMA 更新:")
+        thoughts.append("  detail_score EMA 更新:")
         thoughts.append(
             f"    公式: {alpha} × {current_scores['detail_score']:.4f} + (1 - {alpha}) × {old_detail:.4f}"
         )
@@ -368,7 +366,7 @@ class EyeTrackerProcessor:
             alpha * current_scores["explanation_score"]
             + (1 - alpha) * self.long_term_explanation
         )
-        thoughts.append(f"  explanation_score EMA 更新:")
+        thoughts.append("  explanation_score EMA 更新:")
         thoughts.append(
             f"    公式: {alpha} × {current_scores['explanation_score']:.4f} + (1 - {alpha}) × {old_explanation:.4f}"
         )
@@ -383,9 +381,9 @@ class EyeTrackerProcessor:
         self.long_term_persona_bias = (
             alpha * current_persona_bias + (1 - alpha) * self.long_term_persona_bias
         )
-        thoughts.append(f"  persona_bias EMA 更新:")
+        thoughts.append("  persona_bias EMA 更新:")
         thoughts.append(
-            f"    公式: persona_bias = 0.5 × detail + 0.5 × explanation"
+            "    公式: persona_bias = 0.5 × detail + 0.5 × explanation"
         )
         thoughts.append(
             f"    当前轮: detail={current_scores['detail_score']:.4f}, explanation={current_scores['explanation_score']:.4f} → {current_persona_bias:.4f}"
@@ -414,7 +412,7 @@ class EyeTrackerProcessor:
         final_persona_bias = self.long_term_persona_bias
 
         thoughts.append(f"  β (实时权重) = {beta:.2f}")
-        thoughts.append(f"  最终分数 = 长期模型 (已通过 EMA 融合实时数据)")
+        thoughts.append("  最终分数 = 长期模型 (已通过 EMA 融合实时数据)")
         thoughts.append(f"    detail_score = {final_detail:.4f}")
         thoughts.append(f"    explanation_score = {final_explanation:.4f}")
         thoughts.append(f"    persona_bias = {final_persona_bias:.4f} (0=现代派, 1=稳健派)")
