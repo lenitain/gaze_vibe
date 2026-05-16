@@ -11,7 +11,6 @@ import { selectRelevantFiles, formatFilesForPrompt } from './utils/fileSelector.
 import { parseCodeBlocks } from './utils/codeParser.js'
 import { ALPHA, MIN_EYE_TIME, STRONG_WEIGHT } from './config.js'
 import { createError, fromApiError, fromFileError, ErrorTypes } from './utils/errors.js'
-import { loadPersonaState, savePersonaState, removePersonaState } from './utils/personaStateIO.js'
 
 const isEyeTracking = ref(false)
 const eyeTrackerRef = ref(null)
@@ -19,7 +18,6 @@ const answerPanelRef = ref(null)
 
 const showFolderSelector = ref(true)
 const projectName = ref('')
-const personaState = ref(null)
 const projectFolder = ref(null)
 const fileIndexer = new FileIndexer()
 const indexedFiles = ref([])
@@ -85,16 +83,8 @@ function toggleMode() {
   roundCount.value = 0
   fetch('/api/eye-model/reset', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
-  }).then(async (res) => {
-    const data = await res.json()
-    if (data.initialPersonaState) {
-      personaState.value = data.initialPersonaState
-      if (projectFolder.value) {
-        await removePersonaState(projectFolder.value)
-      }
-      console.log('Persona 状态已重置')
-    }
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectName: projectName.value })
   }).catch(() => {})
 
   // 停止当前追踪，等用户提交问题后再启动
@@ -114,32 +104,11 @@ async function handleFolderSelect(dirHandle) {
   showFolderSelector.value = false
 
   try {
-    // 加载项目已有的 Persona 状态
-    const saved = await loadPersonaState(dirHandle)
-    personaState.value = saved
-    if (saved) {
-      console.log(`已加载 Persona 状态 (偏差=${getPersonaBiasFromState(saved).toFixed(2)}, 收敛=${saved.converged})`)
-    } else {
-      console.log('项目无 Persona 状态，将在首次选择后创建')
-    }
-
     indexedFiles.value = await fileIndexer.indexDirectory(dirHandle)
     console.log(`Indexed ${indexedFiles.value.length} files from ${dirHandle.name}`)
   } catch (err) {
     console.error('Failed to index directory:', err)
   }
-}
-
-function getPersonaBiasFromState(state) {
-  if (!state) return 0.5
-  const keyDims = ['ecosystem_maturity', 'correctness_strategy', 'error_handling', 'edge_case_coverage', 'dependency_philosophy']
-  let totalGap = 0
-  for (const dim of keyDims) {
-    const a = state.persona_a?.scores?.[dim] ?? 3
-    const b = state.persona_b?.scores?.[dim] ?? 3
-    totalGap += Math.abs(a - b)
-  }
-  return Math.min(1, totalGap / keyDims.length / 4)
 }
 
 
@@ -184,7 +153,7 @@ async function handleSubmit(prompt) {
       body: JSON.stringify({
         prompt, contextFiles,
         experimentMode: experimentMode.value,
-        personaState: personaState.value,
+        projectName: projectName.value,
         eyeData
       })
     })
@@ -359,7 +328,7 @@ async function handleChoice(side) {
     body: JSON.stringify({ 
       preference: userPreference.value,
       experimentMode: experimentMode.value,
-      personaState: personaState.value,
+      projectName: projectName.value,
       emaBias: emaBias.value,
       confidence: confidence.value,
       decisionTime,
@@ -367,16 +336,7 @@ async function handleChoice(side) {
       answerALength: answerALength.value,
       answerBLength: answerBLength.value
     })
-  }).then(async (res) => {
-    const data = await res.json()
-    // 保存后端返回的更新后 Persona 状态
-    if (data.personaState) {
-      personaState.value = data.personaState
-      if (projectFolder.value) {
-        await savePersonaState(projectFolder.value, data.personaState)
-      }
-      console.log('Persona 状态已更新并持久化')
-    }
+  }).then(() => {
     choiceSaved.value = true
     setTimeout(() => { choiceSaved.value = false }, 3000)
   }).catch(err => {

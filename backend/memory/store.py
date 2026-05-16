@@ -24,12 +24,14 @@ class MemoryStore:
     embedding 向量存在 numpy 矩阵中，按需从 deepseek 计算。
     """
 
-    def __init__(self, data_dir: str | Path = DATA_DIR):
-        self.data_dir = Path(data_dir)
+    def __init__(self, project_name: str = "default"):
+        self.project_name = project_name
+        safe = project_name.replace("/", "_").replace("\\", "_")
+        self.data_dir = DATA_DIR / safe
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
         self.items: list[MemoryItem] = []
-        self._embeddings: list[list[float]] = []  # 与 items 一一对应
+        self._embeddings: list[list[float]] = []
 
         self._load()
 
