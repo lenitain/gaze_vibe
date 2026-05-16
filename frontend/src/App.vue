@@ -17,6 +17,7 @@ const eyeTrackerRef = ref(null)
 const answerPanelRef = ref(null)
 
 const showFolderSelector = ref(true)
+const projectName = ref('')
 const projectFolder = ref(null)
 const fileIndexer = new FileIndexer()
 const indexedFiles = ref([])
@@ -80,7 +81,11 @@ function toggleMode() {
   // 切换模式时重置前后端建模状态，防止跨模式干扰
   emaBias.value = 0.5
   roundCount.value = 0
-  fetch('/api/eye-model/reset', { method: 'POST' }).catch(() => {})
+  fetch('/api/eye-model/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectName: projectName.value })
+  }).catch(() => {})
 
   // 停止当前追踪，等用户提交问题后再启动
   if (eyeTrackerRef.value) {
@@ -95,6 +100,7 @@ function handleFileSelect(file) {
 
 async function handleFolderSelect(dirHandle) {
   projectFolder.value = dirHandle
+  projectName.value = dirHandle.name
   showFolderSelector.value = false
 
   try {
@@ -147,6 +153,7 @@ async function handleSubmit(prompt) {
       body: JSON.stringify({
         prompt, contextFiles,
         experimentMode: experimentMode.value,
+        projectName: projectName.value,
         eyeData
       })
     })
@@ -321,6 +328,7 @@ async function handleChoice(side) {
     body: JSON.stringify({ 
       preference: userPreference.value,
       experimentMode: experimentMode.value,
+      projectName: projectName.value,
       emaBias: emaBias.value,
       confidence: confidence.value,
       decisionTime,

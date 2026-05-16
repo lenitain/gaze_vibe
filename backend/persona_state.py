@@ -9,11 +9,16 @@ Persona 状态持久化 + 动态调整
 """
 
 import json
+import os
 import random
 from pathlib import Path
 from typing import Optional
 
 from persona_loader import PersonaLoader, Persona, DIMENSION_PRIORITY
+
+
+# 存储目录：按项目名隔离
+_STATES_DIR = Path(__file__).parent / "persona_states"
 
 # 关键维度用于收敛检测
 KEY_DIMS = [
@@ -30,17 +35,16 @@ CONVERGE_THRESHOLD = 0.5
 # EMA 系数
 ALPHA = 0.3
 
-STATE_FILE = Path(__file__).parent / "persona_state.json"
-
-
 class PersonaState:
     """Persona 动态状态"""
 
     def __init__(
         self,
+        project_name: str = "default",
         persona_a_name: str = "稳健派",
         persona_b_name: str = "现代派",
     ):
+        self.project_name = project_name
         self.persona_a_name = persona_a_name
         self.persona_b_name = persona_b_name
 
@@ -55,6 +59,12 @@ class PersonaState:
             self.persona_b.scores[dim] = float(self.persona_b.scores[dim])
 
         self.converged = False
+
+    def _state_path(self) -> Path:
+        """获取当前项目的状态文件路径"""
+        _STATES_DIR.mkdir(parents=True, exist_ok=True)
+        safe_name = self.project_name.replace("/", "_").replace("\\", "_")
+        return _STATES_DIR / f"{safe_name}.json"
 
     def record_choice(self, chosen_side: str):
         """
@@ -126,7 +136,8 @@ class PersonaState:
         return min(1.0, gap / 4.0)
 
     def save(self):
-        """持久化到 JSON"""
+        """持久化到 JSON（按项目名隔离）"""
+        state_path = self._state_path()
         data = {
             "version": 1,
             "converged": self.converged,
@@ -139,21 +150,26 @@ class PersonaState:
                 "scores": self.persona_b.scores,
             },
         }
-        STATE_FILE.write_text(
+        state_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
     @classmethod
     def load_or_create(
         cls,
+        project_name: str = "default",
         persona_a_name: str = "稳健派",
         persona_b_name: str = "现代派",
     ) -> "PersonaState":
         """从持久化恢复，或创建新的状态"""
-        if STATE_FILE.exists():
+        safe_name = project_name.replace("/", "_").replace("\\", "_")
+        state_path = _STATES_DIR / f"{safe_name}.json"
+
+        if state_path.exists():
             try:
-                data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+                data = json.loads(state_path.read_text(encoding="utf-8"))
                 state = cls(
+                    project_name=project_name,
                     persona_a_name=data["persona_a"]["name"],
                     persona_b_name=data["persona_b"]["name"],
                 )
@@ -164,13 +180,15 @@ class PersonaState:
                     state.persona_b.scores[dim] = val
                 state.converged = data.get("converged", False)
                 return state
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"读取 Persona 状态失败: {e}，使用默认值")
 
-        return cls(persona_a_name, persona_b_name)
+        return cls(project_name, persona_a_name, persona_b_name)
 
     @classmethod
-    def reset(cls):
-        """重置状态文件"""
-        if STATE_FILE.exists():
-            STATE_FILE.unlink()
+    def reset(cls, project_name: str = "default"):
+        """重置指定项目的状态文件"""
+        safe_name = project_name.replace("/", "_").replace("\\", "_")
+        state_path = _STATES_DIR / f"{safe_name}.json"
+        if state_path.exists():
+            state_path.unlink()
