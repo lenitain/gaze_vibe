@@ -54,4 +54,4 @@ export const PERSONA_B_NAME = '现代派'
 // 界面缩放
 // 修改数值即可整体调整 UI 大小
 // 1.0 = 原始大小, 0.7 = 70%
-export const FONT_SCALE = 0.7
+export const FONT_SCALE = 1
