@@ -113,6 +113,18 @@ async function handleFolderSelect(dirHandle) {
 
 
 async function handleSubmit(prompt) {
+  // 保存上一轮对话到历史
+  if (currentQuestion.value && (answerA.value || answerB.value)) {
+    conversationHistory.value.push({
+      question: currentQuestion.value,
+      answerA: answerA.value,
+      answerB: answerB.value,
+      answerSegmentsA: [...answerSegmentsA.value],
+      answerSegmentsB: [...answerSegmentsB.value],
+      timestamp: Date.now(),
+    })
+  }
+
   currentQuestion.value = prompt
   isLoading.value = true
   answerPanelRef.value?.resetChoice()
@@ -381,17 +393,76 @@ function handleRegionSwitch({ from, to }) {
     </header>
 
     <main class="main">
-      <div class="sidebar" v-if="showFileExplorer && !showFolderSelector">
-        <FileTree
-          :files="indexedFiles"
-          :project-folder="projectFolder"
-          @select="handleFileSelect"
-        />
+      <!-- 文件树: 覆盖层，保留输入框可见 -->
+      <div v-if="showFileExplorer && !showFolderSelector" class="file-overlay" @click.self="showFileExplorer = false">
+        <div class="file-drawer">
+          <div class="file-drawer-header">
+            <span class="file-drawer-title">项目文件</span>
+            <button class="file-drawer-close" @click="showFileExplorer = false">✕</button>
+          </div>
+          <FileTree
+            :files="indexedFiles"
+            :project-folder="projectFolder"
+            @select="(f) => { handleFileSelect(f); showFileExplorer = false; }"
+          />
+        </div>
       </div>
 
       <div class="content-area">
-        <div class="main-content">
-          <div class="explorer-toggle" v-if="!showFolderSelector">
+        <div class="chat-scroll">
+          <!-- 历史对话 -->
+          <div v-for="(item, idx) in conversationHistory" :key="idx" class="history-entry">
+            <div class="user-message">
+              <div class="user-bubble">{{ item.question }}</div>
+            </div>
+            <AnswerPanel
+              :answerA="item.answerA"
+              :answerB="item.answerB"
+              :answerSegmentsA="item.answerSegmentsA"
+              :answerSegmentsB="item.answerSegmentsB"
+              :files="indexedFiles"
+              :personaNameA="PERSONA_A_NAME"
+              :personaNameB="PERSONA_B_NAME"
+            />
+          </div>
+
+          <!-- 当前对话 -->
+          <template v-if="currentQuestion || answerA || answerB || isLoading">
+            <div class="user-message">
+              <div class="user-bubble">{{ currentQuestion }}</div>
+              <div v-if="isLoading" class="waiting-indicator">
+                <div class="spinner"></div>
+                <span>AI 思考中...</span>
+              </div>
+            </div>
+            <AnswerPanel
+              v-if="answerA || answerB"
+              ref="answerPanelRef"
+              :answerA="answerA"
+              :answerB="answerB"
+              :is-loading="isLoading"
+              :files="indexedFiles"
+              :preferred-side="preferredSide"
+              :auto-mode="autoMode"
+              :confidence="confidence"
+              :answerSegmentsA="answerSegmentsA"
+              :answerSegmentsB="answerSegmentsB"
+              :personaNameA="PERSONA_A_NAME"
+              :personaNameB="PERSONA_B_NAME"
+              @choice="handleChoice"
+            />
+          </template>
+
+          <!-- 空状态 -->
+          <div v-if="!currentQuestion && !answerA && !answerB && conversationHistory.length === 0" class="welcome">
+            <h2>欢迎使用 GazeVibe</h2>
+            <p>输入你的编程问题，获取双份不同风格的回答</p>
+            <p class="hint">系统会通过眼动追踪分析你的阅读偏好，优化后续回答</p>
+          </div>
+        </div>
+
+        <div class="input-bar">
+          <div class="explorer-toggle">
             <button @click="showFileExplorer = !showFileExplorer" :class="{ active: showFileExplorer }">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -399,49 +470,18 @@ function handleRegionSwitch({ from, to }) {
               文件
             </button>
           </div>
-
-          <FileViewer
-            v-if="selectedFile && showFileExplorer"
-            :file="selectedFile"
-            class="file-viewer"
-          />
-
-          <div v-if="!currentQuestion && !answerA && !answerB && !selectedFile" class="welcome">
-            <h2>欢迎使用 GazeVibe</h2>
-            <p>输入你的编程问题，获取双份不同风格的回答</p>
-            <p class="hint">系统会通过眼动追踪分析你的阅读偏好，优化后续回答</p>
-          </div>
-
-          <div v-if="currentQuestion" class="user-message">
-            <div class="user-bubble">{{ currentQuestion }}</div>
-            <div v-if="isLoading" class="waiting-indicator">
-              <div class="spinner"></div>
-              <span>AI 思考中...</span>
-            </div>
-          </div>
-
-          <AnswerPanel
-            v-if="answerA || answerB"
-            ref="answerPanelRef"
-            :answerA="answerA"
-            :answerB="answerB"
-            :is-loading="isLoading"
-            :files="indexedFiles"
-            :preferred-side="preferredSide"
-            :auto-mode="autoMode"
-            :confidence="confidence"
-            :answerSegmentsA="answerSegmentsA"
-            :answerSegmentsB="answerSegmentsB"
-            :personaNameA="PERSONA_A_NAME"
-            :personaNameB="PERSONA_B_NAME"
-            @choice="handleChoice"
+          <ChatInput
+            :disabled="isLoading"
+            @submit="handleSubmit"
           />
         </div>
 
-        <ChatInput
-          :disabled="isLoading"
-          @submit="handleSubmit"
-        />
+        <div v-if="selectedFile" class="file-viewer-overlay" @click.self="selectedFile = null">
+          <FileViewer
+            :file="selectedFile"
+            class="file-viewer"
+          />
+        </div>
       </div>
     </main>
 
@@ -531,30 +571,34 @@ function handleRegionSwitch({ from, to }) {
   gap: 16px;
 }
 
-.sidebar {
-  width: 280px;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
 .content-area {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
-.main-content {
+.chat-scroll {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  overflow: hidden;
+  overflow-y: auto;
+  padding: 8px 12px;
+}
+
+.input-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--bg3);
+  background: var(--bg0);
 }
 
 .explorer-toggle {
-  display: flex;
-  justify-content: flex-start;
+  flex-shrink: 0;
 }
 
 .explorer-toggle button {
@@ -569,6 +613,7 @@ function handleRegionSwitch({ from, to }) {
   font-size: var(--font-sm);
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .explorer-toggle button:hover {
@@ -582,9 +627,83 @@ function handleRegionSwitch({ from, to }) {
   color: var(--blue);
 }
 
+/* 文件树覆盖层 */
+.file-overlay {
+  position: fixed;
+  inset: 0;
+  top: 48px;
+  bottom: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.file-drawer {
+  width: 300px;
+  height: 100%;
+  background: var(--bg1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.3);
+}
+
+.file-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--bg3);
+}
+
+.file-drawer-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.file-drawer-close {
+  background: none;
+  border: none;
+  color: var(--grey1);
+  font-size: var(--font-lg);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+.file-drawer-close:hover {
+  color: var(--fg);
+}
+
+.history-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .file-viewer {
   flex: 1;
   min-height: 0;
+}
+
+.file-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  top: 48px;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.file-viewer-overlay .file-viewer {
+  max-width: 80vw;
+  max-height: 80vh;
+  background: var(--bg1);
+  border-radius: 8px;
+  padding: 16px;
 }
 
 .welcome {
