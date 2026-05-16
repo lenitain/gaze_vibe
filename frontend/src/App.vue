@@ -154,11 +154,14 @@ async function handleSubmit(prompt) {
       throw new Error(`API 请求失败: ${response.status}`)
     }
 
-    // 逐段读取 SSE 流
+    // 逐段读取 SSE 流（新事件协议）
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     let segmentsArrived = 0
+    // 当前累积的段落文本（用于分段显示）
+    let currentSegId = ''
+    let currentSegHint = ''
 
     while (true) {
       const { done, value } = await reader.read()
@@ -180,29 +183,49 @@ async function handleSubmit(prompt) {
           continue
         }
 
-        if (parsed.type === 'segment' && parsed.success) {
-          segmentsArrived++
+        const eventType = parsed.type
 
-          // 追加到 segments 列表
-          answerSegmentsA.value = [...answerSegmentsA.value, {
-            id: parsed.id,
-            contextHint: parsed.hint,
-            content: parsed.answerA
-          }]
-          answerSegmentsB.value = [...answerSegmentsB.value, {
-            id: parsed.id,
-            contextHint: parsed.hint,
-            content: parsed.answerB
-          }]
+        // --- segment_start: 子问题开始 ---
+        if (eventType === 'segment_start') {
+          currentSegId = parsed.id || ''
+          currentSegHint = parsed.contextHint || ''
+        }
 
-          // 累积全文（用于 code block 解析）
-          const separator = answerA.value ? '\n\n---\n\n' : ''
-          answerA.value += separator + (parsed.answerA || '')
-          answerB.value += separator + (parsed.answerB || '')
+        // --- text_delta: 文本增量（逐块推送） ---
+        if (eventType === 'text_delta') {
+          const style = parsed.style
+          const text = parsed.text || ''
+          if (style === 'detailed') {
+            answerA.value += text
+          } else if (style === 'concise') {
+            answerB.value += text
+          }
           answerALength.value = answerA.value.length
           answerBLength.value = answerB.value.length
+        }
 
-          // 首个 segment 到达后启动眼动
+        // --- text_end: 文本块结束 ---
+        if (eventType === 'text_end') {
+          const style = parsed.style
+          const segId = parsed.segmentId || currentSegId
+          const segHint = currentSegHint
+
+          if (style === 'detailed') {
+            answerSegmentsA.value = [...answerSegmentsA.value, {
+              id: segId,
+              contextHint: segHint,
+              content: parsed.fullText || answerA.value
+            }]
+          } else if (style === 'concise') {
+            answerSegmentsB.value = [...answerSegmentsB.value, {
+              id: segId,
+              contextHint: segHint,
+              content: parsed.fullText || answerB.value
+            }]
+          }
+          segmentsArrived++
+
+          // 首个内容到达后启动眼动
           if (!eyeTrackingStarted && experimentMode.value !== 'control' && eyeTrackerRef.value && !isEyeTracking.value) {
             eyeTrackerRef.value.startTracking()
             isEyeTracking.value = true
@@ -211,8 +234,29 @@ async function handleSubmit(prompt) {
           }
         }
 
-        if (parsed.type === 'done') {
+        // --- segment_end: 子问题结束 ---
+        if (eventType === 'segment_end') {
+          // 重置段落缓存
+          currentSegId = ''
+          currentSegHint = ''
+        }
+
+        // --- eye_adjustment: 眼动状态更新 ---
+        if (eventType === 'eye_adjustment') {
+          console.log('[眼动状态]', parsed)
+        }
+
+        // --- done: 全部完成 ---
+        if (eventType === 'done') {
           isLoading.value = false
+        }
+
+        // --- error: 错误 ---
+        if (eventType === 'error') {
+          console.error('[SSE错误]', parsed.message)
+          if (!error.value) {
+            error.value = fromApiError(new Error(parsed.message || '未知错误'), '/api/ask')
+          }
         }
       }
     }

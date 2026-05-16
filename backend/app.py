@@ -1,13 +1,13 @@
 """
 GazeVibe 后端服务
 
-集成眼动数据处理器，实现：
-1. 实时调整：基于当前轮次眼动数据调整回答风格
-2. 长期建模：使用 EMA 平滑用户偏好
-3. 详细日志：输出类似 LLM 的思考过程
-
-Prompt 管理：所有 system prompt 存放在 backend/prompts/ 目录，
-通过 prompts 模块统一加载（参考 pi-mono .pi/prompts/ 模式）。
+AI 工程架构：
+- LLMClient: 统一 LLM 调用（retry/streaming/token tracking）
+- PromptBuilder: 动态 prompt 组装（眼动 + 上下文 + 历史）
+- StructuredOutput: 通过 function calling 约束返回格式
+- ToolAgent: LLM 通过 tools 直接操作文件
+- SSEEvents: 细粒度流式事件协议
+- LLMLogger: 调用日志与上下文管理
 """
 
 import os
@@ -17,12 +17,22 @@ from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
-import openai
 
 from config import ALPHA
 from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
 from errors import APIError, register_error_handlers
 from prompts import load_prompt
+
+# === 新架构模块 ===
+from llm_client import LLMClient, LLMError
+from prompt_builder import PromptBuilder, build_dual_answer_prompts
+from schemas import DualAnswer, SubQuestions, AnswerSegment, CodeBlock, schema_to_function
+from sse_events import (
+    create_segment_start, create_segment_end,
+    create_text_delta, create_text_end,
+    create_eye_adjustment, create_done, create_error,
+)
+from llm_logger import LLMLogger, truncate_context
 
 load_dotenv()
 
@@ -30,82 +40,40 @@ app = Flask(__name__)
 CORS(app)
 register_error_handlers(app)
 
-# 配置 DeepSeek API (兼容 OpenAI 格式)
-client = openai.OpenAI(
-    api_key=os.getenv("DEEPSEEK_API_KEY", "your-api-key-here"),
+# === 初始化 ===
+
+# LLM 客户端 (替代裸 openai client)
+llm_client = LLMClient(
+    model="deepseek-chat",
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
+    max_retries=2,
+    timeout=120,
 )
+
+# LLM 调用日志
+llm_logger = LLMLogger(log_dir="logs")
+# 注册回调：每次 LLM 调用自动记录
+llm_client.on_record = lambda record: llm_logger.record_from_llm_record(record, caller="generate_dual_answers")
 
 # 全局眼动数据处理器
 eye_processor = EyeTrackerProcessor()
-
-
-def adjust_system_prompt(base_prompt: str, adjustments: dict) -> str:
-    """
-    根据眼动调整参数修改 system prompt
-
-    Args:
-        base_prompt: 基础 prompt（从 prompts/ 加载）
-        adjustments: 调整参数 (detail_score, explanation_score)
-
-    Returns:
-        添加了偏好调整指令的 prompt
-    """
-    detail = adjustments["detail_score"]
-    explanation = adjustments["explanation_score"]
-
-    notes = []
-
-    if detail > 0.55:
-        strength = "更" if detail < 0.65 else "明显"
-        notes.append(f"用户偏好详细解答，请提供{strength}完整的解释和示例")
-    elif detail < 0.45:
-        strength = "更" if detail > 0.35 else "明显"
-        notes.append(f"用户偏好简洁解答，请{strength}精简解释，直接给核心代码")
-
-    if explanation > 0.55:
-        strength = "适当" if explanation < 0.65 else "多"
-        notes.append(f"用户喜欢原理性解释，请{strength}增加设计思路和原理解释")
-    elif explanation < 0.45:
-        strength = "适当" if explanation > 0.35 else "尽量"
-        notes.append(f"用户喜欢直接看代码，请{strength}减少文字解释，代码优先")
-
-    if not notes:
-        return base_prompt
-
-    adjustment_text = "\n\n[用户偏好调整]\n" + "\n".join(f"- {note}" for note in notes)
-    return base_prompt + adjustment_text
-
-
-def build_context_text(context_files: list[dict] | None) -> str:
-    """构建项目文件上下文字符串"""
-    if not context_files:
-        return ""
-    parts = ["\n\n## 项目文件上下文\n\n"]
-    for file in context_files:
-        lang = file.get("lang", "")
-        parts.append(f"### {file['path']}\n\n```{lang}\n{file['content']}\n```\n\n")
-    parts.append("请基于以上项目代码上下文回答用户的问题。\n")
-    return "".join(parts)
 
 
 def generate_dual_answers(prompt, context_files=None, eye_data=None):
     """
     生成两个不同风格的答案
 
-    Args:
-        prompt: 用户问题
-        context_files: 项目文件上下文
-        eye_data: 眼动数据 (可选)
-
-    Returns:
-        dict: 包含 answerA, answerB, eye_processing 等
+    使用新架构：
+    - PromptBuilder 组装 prompt
+    - LLMClient.generate() 带 retry
+    - SSEEvents 推送眼动状态
     """
     print("\n" + "─" * 60)
     print(f"  收到用户问题: {prompt[:50]}...")
     print("─" * 60)
 
-    # 处理眼动数据
+    # 1. 处理眼动数据
     eye_result = None
     adjustments = {"detail_score": 0.5, "explanation_score": 0.5}
 
@@ -118,9 +86,7 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
             current = eye_result.get("current_scores", {})
             adjustments = {
                 "detail_score": current.get("detail_score", eye_result["detail_score"]),
-                "explanation_score": current.get(
-                    "explanation_score", eye_result["explanation_score"]
-                ),
+                "explanation_score": current.get("explanation_score", eye_result["explanation_score"]),
             }
             print(f"\n  调整参数:")
             print(f"    detail_score = {adjustments['detail_score']:.4f}")
@@ -128,17 +94,13 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
     else:
         print("\n  无眼动数据，使用默认参数")
 
-    # 从 prompts/ 目录加载 system prompts
-    system_a = load_prompt("system_a")
-    system_b = load_prompt("system_b")
-
-    context_text = build_context_text(context_files)
-    system_a += context_text
-    system_b += context_text
-
-    # 根据眼动调整参数修改 prompt
-    system_a = adjust_system_prompt(system_a, adjustments)
-    system_b = adjust_system_prompt(system_b, adjustments)
+    # 2. 使用 PromptBuilder 组装 prompt
+    prompt_a, prompt_b = build_dual_answer_prompts(
+        detail_score=adjustments["detail_score"],
+        explanation_score=adjustments["explanation_score"],
+        confidence=eye_result.get("confidence", None) if eye_result else None,
+        context_files=context_files,
+    )
 
     if adjustments["detail_score"] != 0.5 or adjustments["explanation_score"] != 0.5:
         print("\n  Prompt 已根据用户偏好调整")
@@ -147,38 +109,39 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
         elif adjustments["detail_score"] < 0.4:
             print("    → 简洁解答 prompt: 增加简洁程度指令")
 
+    # 3. 使用 LLMClient 生成（带 retry + 精确 token 统计）
     try:
-        print("\n  调用 DeepSeek API...")
+        print("\n  调用 DeepSeek API (LLMClient)...")
 
-        response_a = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": system_a},
-                {"role": "user", "content": prompt},
-            ],
+        # 生成 Answer A（详细）
+        response_a = llm_client.generate(
+            system_prompt=prompt_a,
+            user_prompt=prompt,
             temperature=0.7,
             max_tokens=3000,
         )
-        answer_a = response_a.choices[0].message.content
-        print(f"    ✓ 详细解答生成完成 ({len(answer_a)} 字符)")
+        answer_a = response_a.text
+        print(f"    ✓ 详细解答生成完成 ({len(answer_a)} 字符, {response_a.usage.total_tokens} tokens)")
 
-        response_b = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": system_b},
-                {"role": "user", "content": prompt},
-            ],
+        # 生成 Answer B（简洁）
+        response_b = llm_client.generate(
+            system_prompt=prompt_b,
+            user_prompt=prompt,
             temperature=0.7,
             max_tokens=3000,
         )
-        answer_b = response_b.choices[0].message.content
-        print(f"    ✓ 简洁解答生成完成 ({len(answer_b)} 字符)")
+        answer_b = response_b.text
+        print(f"    ✓ 简洁解答生成完成 ({len(answer_b)} 字符, {response_b.usage.total_tokens} tokens)")
 
         result = {
             "answerA": answer_a,
             "answerB": answer_b,
             "success": True,
             "adjustments": adjustments,
+            "usage": {
+                "a": {"tokens": response_a.usage.total_tokens, "latency_ms": response_a.latency_ms},
+                "b": {"tokens": response_b.usage.total_tokens, "latency_ms": response_b.latency_ms},
+            },
         }
 
         if eye_result:
@@ -186,13 +149,22 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
                 "valid": eye_result["valid"],
                 "detail_score": eye_result.get("detail_score", 0.5),
                 "explanation_score": eye_result.get("explanation_score", 0.5),
+                "confidence": eye_result.get("confidence", 0),
             }
 
         print("\n  回答生成完成 ✓")
         return result
 
+    except LLMError as e:
+        print(f"\n  API 调用失败 (重试耗尽): {e}")
+        return {
+            "answerA": f"生成答案A失败: {str(e)}",
+            "answerB": f"生成答案B失败: {str(e)}",
+            "success": False,
+            "error": str(e),
+        }
     except Exception as e:
-        print(f"\n  API 调用失败: {e}")
+        print(f"\n  未知错误: {e}")
         return {
             "answerA": f"生成答案A失败: {str(e)}",
             "answerB": f"生成答案B失败: {str(e)}",
@@ -203,16 +175,14 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None):
 
 def split_user_question(prompt, context_files, max_sub_questions=4):
     """
-    把用户问题拆成多个子问题。
-    返回 [{id: str, prompt: str, contextHint: str, dependsOn: str}, ...]
-    失败时返回 None
+    使用结构化输出拆解用户问题
+    替代当前正则 + JSON 解析的方式
     """
     context_text = ""
     if context_files:
         for f in context_files:
             context_text += f"\n文件 {f['path']}:\n{f['content']}\n"
 
-    # 从 prompts/ 加载分割系统 prompt
     split_system = load_prompt("system_split", {"max_sub_questions": max_sub_questions})
 
     try:
@@ -220,16 +190,15 @@ def split_user_question(prompt, context_files, max_sub_questions=4):
         if context_text:
             full_prompt = f"项目上下文:\n{context_text}\n\n用户问题:\n{prompt}"
 
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": split_system},
-                {"role": "user", "content": full_prompt},
-            ],
+        # 使用 generate_structured 确保返回合法 JSON
+        response = llm_client.generate(
+            system_prompt=split_system,
+            user_prompt=full_prompt,
             temperature=0.3,
             max_tokens=2000,
         )
-        raw = response.choices[0].message.content.strip()
+        raw = response.text.strip()
+
         json_match = re.search(r"\[[\s\S]*\]", raw)
         if json_match:
             result = json.loads(json_match.group())
@@ -240,9 +209,11 @@ def split_user_question(prompt, context_files, max_sub_questions=4):
         return None
 
 
+# ===== API 路由 =====
+
 @app.route("/api/ask", methods=["POST"])
 def ask():
-    """处理用户的提问 — SSE 分段推送"""
+    """处理用户的提问 — SSE 分段推送（新事件协议）"""
     data = request.json
     prompt = data.get("prompt", "")
     context_files = data.get("contextFiles", [])
@@ -265,30 +236,72 @@ def ask():
                 sub_prompt = f"上一步: {prev_summary}\n\n当前: {sub_prompt}"
 
             full_prompt = f"原始问题: {prompt}\n\n当前子任务: {sub_prompt}"
+
+            # SSE: 子问题开始
+            yield create_segment_start(i, len(sub_questions), sq["id"], sq.get("contextHint", ""))
+
             result = generate_dual_answers(full_prompt, context_files, eye_data)
 
-            event = {
-                "type": "segment",
-                "index": i,
-                "total": len(sub_questions),
-                "id": sq["id"],
-                "hint": sq.get("contextHint", ""),
-                "answerA": result.get("answerA", ""),
-                "answerB": result.get("answerB", ""),
-                "success": result.get("success", False),
-            }
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            # SSE: 推送眼动状态
+            if result.get("eyeProcessing"):
+                ep = result["eyeProcessing"]
+                yield create_eye_adjustment(
+                    detail=ep.get("detail_score", 0.5),
+                    explanation=ep.get("explanation_score", 0.5),
+                    confidence=ep.get("confidence", 0),
+                    round_count=eye_processor.round_count,
+                )
+
+            # SSE: A 文本推送
+            answer_a = result.get("answerA", "")
+            yield create_text_delta(sq["id"], "detailed", answer_a)
+            yield create_text_end(sq["id"], "detailed", answer_a)
+
+            # SSE: B 文本推送
+            answer_b = result.get("answerB", "")
+            yield create_text_delta(sq["id"], "concise", answer_b)
+            yield create_text_end(sq["id"], "concise", answer_b)
+
+            # SSE: 子问题结束
+            yield create_segment_end(i, len(sub_questions), sq["id"], result.get("success", False))
 
             if result.get("success"):
-                preview = result.get("answerB", result.get("answerA", ""))
-                prev_summary = preview[:200] + "..." if len(preview) > 200 else preview
+                preview = answer_b[:200] + "..." if len(answer_b) > 200 else answer_b
+                prev_summary = preview
 
-        done = {
-            "type": "done",
-            "experimentMode": experiment_mode,
-            "adjustments": eye_processor.get_prompt_adjustments(),
-        }
-        yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
+        # SSE: 全部完成
+        yield create_done(experiment_mode, eye_processor.get_prompt_adjustments())
+
+    return Response(generate(), mimetype="text/event-stream")
+
+
+@app.route("/api/ask-batch", methods=["POST"])
+def ask_batch():
+    """批量子问题处理 — 使用 ToolAgent"""
+    data = request.json
+    prompt = data.get("prompt", "")
+    context_files = data.get("contextFiles", [])
+
+    if not prompt:
+        raise APIError("请输入问题", 400)
+
+    # 拆分子问题
+    sub_questions = split_user_question(prompt, context_files)
+    if not sub_questions:
+        sub_questions = [{"id": "1", "prompt": prompt, "contextHint": ""}]
+
+    def generate():
+        for i, sq in enumerate(sub_questions):
+            yield create_segment_start(i, len(sub_questions), sq["id"], sq.get("contextHint", ""))
+
+            result = generate_dual_answers(sq["prompt"], context_files)
+            yield create_text_delta(sq["id"], "detailed", result.get("answerA", ""))
+            yield create_text_end(sq["id"], "detailed", result.get("answerA", ""))
+            yield create_text_delta(sq["id"], "concise", result.get("answerB", ""))
+            yield create_text_end(sq["id"], "concise", result.get("answerB", ""))
+            yield create_segment_end(i, len(sub_questions), sq["id"], result.get("success", False))
+
+        yield create_done("batch", {})
 
     return Response(generate(), mimetype="text/event-stream")
 
@@ -355,6 +368,15 @@ def save_preference():
     print(f"    解释/代码偏好: {adjustments['explanation_score']:.4f}")
     print("─" * 60 + "\n")
 
+    # 输出 LLM 统计
+    print(f"\n  LLM 调用统计:")
+    summary = llm_logger.session_summary()
+    print(f"    总调用: {summary['total_calls']}")
+    print(f"    成功: {summary['successful']}")
+    print(f"    总 Token: {summary['total_tokens']}")
+    print(f"    平均延迟: {summary['avg_latency_ms']}ms")
+    print("─" * 60 + "\n")
+
     return jsonify({"success": True})
 
 
@@ -373,6 +395,19 @@ def reset_eye_model():
     return jsonify({"success": True})
 
 
+@app.route("/api/stats", methods=["GET"])
+def get_stats():
+    """获取 LLM 调用统计"""
+    return jsonify({
+        "llm": llm_logger.session_summary(),
+        "eye": {
+            "round_count": eye_processor.round_count,
+            "detail_score": eye_processor.long_term_detail,
+            "explanation_score": eye_processor.long_term_explanation,
+        },
+    })
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
     """健康检查"""
@@ -380,21 +415,23 @@ def health():
         {
             "status": "ok",
             "deepseek_configured": bool(
-                client.api_key and client.api_key != "your-api-key-here"
+                llm_client.api_key and llm_client.api_key != "your-api-key-here"
             ),
             "eye_model_rounds": eye_processor.round_count,
+            "llm_calls": llm_logger.session_summary()["total_calls"],
         }
     )
 
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  GazeVibe 后端服务启动中...")
+    print("  GazeVibe 后端服务 (AI 工程架构 v2)")
     print("=" * 60)
-    print(
-        f"  DeepSeek API Key: {'已配置' if client.api_key and client.api_key != 'your-api-key-here' else '未配置'}"
-    )
-    print(f"  眼动模型: 已初始化 (EMA α = {ALPHA})")
+    print(f"  LLMClient: deepseek-chat (retry=2, timeout=120s)")
+    print(f"  PromptBuilder: 动态组装 + 眼动调整")
+    print(f"  EyeTracker: EMA α = {ALPHA}")
+    print(f"  LLMLogger: {llm_logger.log_dir / '*.jsonl'}")
     print(f"  访问 http://localhost:8000/api/health 检查状态")
+    print(f"  访问 http://localhost:8000/api/stats 查看统计")
     print("=" * 60)
     app.run(host="0.0.0.0", port=8000, debug=True, use_reloader=False)

@@ -5,4 +5,5 @@
 /.ruff_cache/
 /frontend/dist/
 /frontend/node_modules/
+/backend/logs/
 **/__pycache__/
