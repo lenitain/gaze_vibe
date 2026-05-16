@@ -19,13 +19,16 @@ from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
-from config import ALPHA
+from config import ALPHA, MEMORY_TOP_K
 from errors import APIError, register_error_handlers
 from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
 
 # === 新架构模块 ===
 from llm_client import LLMClient, LLMError
 from llm_logger import LLMLogger
+from memory.extractor import extract_semantic_memories
+from memory.retrieval import format_context, retrieve
+from memory.store import MemoryStore
 from persona_loader import PersonaLoader
 from persona_state import get_persona_bias, get_prompt_scores, initial_state, record_choice
 from prompt_builder import build_dual_answer_prompts
@@ -38,6 +41,7 @@ from sse_events import (
     create_text_delta,
     create_text_end,
 )
+from vector_utils import init_embedding_client
 
 load_dotenv()
 
@@ -63,6 +67,10 @@ llm_client.on_record = lambda record: llm_logger.record_from_llm_record(record, 
 
 # 全局眼动数据处理器
 eye_processor = EyeTrackerProcessor()
+
+# 记忆系统
+init_embedding_client(llm_client._client)
+memory_store = MemoryStore()
 
 
 def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_state=None):
@@ -259,6 +267,18 @@ def ask():
 
             full_prompt = f"原始问题: {prompt}\n\n当前子任务: {sub_prompt}"
 
+            # RAG 检索相关记忆
+            memory_context = ""
+            if memory_store.count() > 0:
+                try:
+                    results = retrieve(memory_store, sub_prompt, top_k=MEMORY_TOP_K)
+                    if results:
+                        memory_context = format_context(results)
+                        full_prompt = f"{memory_context}\n\n---\n\n{full_prompt}"
+                        print(f"    注入 {len(results)} 条记忆上下文")
+                except Exception as e:
+                    print(f"    记忆检索失败: {e}")
+
             # SSE: 子问题开始
             yield create_segment_start(i, len(sub_questions), sq["id"], sq.get("contextHint", ""))
 
@@ -291,6 +311,17 @@ def ask():
             if result.get("success"):
                 preview = answer_b[:200] + "..." if len(answer_b) > 200 else answer_b
                 prev_summary = preview
+
+        # 提取 semantic 记忆
+        if memory_store.count() < 50:
+            try:
+                best_answer = result.get("answerB", "") or result.get("answerA", "")
+                if best_answer and len(best_answer) > 50:
+                    added = extract_semantic_memories(memory_store, llm_client, prompt, best_answer)
+                    if added:
+                        print(f"    提取 {len(added)} 条 semantic 记忆")
+            except Exception as e:
+                print(f"    语义提取失败: {e}")
 
         # SSE: 全部完成
         yield create_done(experiment_mode, eye_processor.get_prompt_adjustments())
@@ -401,6 +432,22 @@ def save_preference():
         print(f"    Persona 偏差: {persona_gap:.4f} (已收敛={updated_state['converged']})")
         if updated_state['converged']:
             print("    Persona 已收敛，未选中侧进入随机探索模式")
+
+        # 保存 episodic 记忆（眼动信号 + 选择）
+        try:
+            memory_store.add_episodic(
+                content=f"用户偏好 Persona {final_choice}（实验模式: {experiment_mode}）",
+                persona=final_choice,
+                confidence=adjustments.get("persona_bias", 0.5),
+                metadata={
+                    "detail_score": adjustments.get("detail_score", 0.5),
+                    "explanation_score": adjustments.get("explanation_score", 0.5),
+                    "experiment_mode": experiment_mode,
+                },
+            )
+            print(f"    保存 episodic 记忆（Persona {final_choice}）")
+        except Exception as e:
+            print(f"    保存 episodic 记忆失败: {e}")
     else:
         print("    Persona 状态: 未更新（无选择或无传入状态）")
 
@@ -429,7 +476,8 @@ def reset_eye_model():
     """重置眼动模型（Persona 状态由前端自行删除）"""
     global eye_processor
     eye_processor = EyeTrackerProcessor()
-    print("\n  眼动模型已重置\n")
+    memory_store.clear()
+    print("\n  眼动模型 + 记忆系统已重置\n")
     return jsonify({"success": True, "initialPersonaState": initial_state()})
 
 
@@ -445,6 +493,11 @@ def get_stats():
         },
         "persona": {
             "note": "Persona 状态由前端管理，存储于项目根目录 persona_state.json",
+        },
+        "memory": {
+            "total": memory_store.count(),
+            "semantic": memory_store.count("semantic"),
+            "episodic": memory_store.count("episodic"),
         },
     })
 

@@ -19,3 +19,8 @@ INITIAL_PERSONA_BIAS = 0.5  # Persona 偏好初始值 (0=现代派, 1=稳健派)
 
 # 与前端 config.js MIN_EYE_TIME 同步
 MIN_EYE_TIME = 2000  # 最小眼动时长阈值 (ms)
+
+# ===== RAG 记忆系统 =====
+MEMORY_TOP_K = 5  # 检索返回的记忆条数
+MEMORY_ENABLE_EXTRACT = True  # 是否启用语义记忆提取
+MEMORY_DATA_DIR = "memory_data"  # 记忆持久化目录

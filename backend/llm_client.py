@@ -173,24 +173,32 @@ class LLMClient:
 
     def generate(
         self,
-        system_prompt: str,
-        user_prompt: str,
+        system_prompt: str = "",
+        user_prompt: str = "",
+        messages: list[dict] | None = None,
         temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         model: str | None = None,
         retry: int | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
     ) -> LLMResponse:
         """
         非流式生成，带 retry 和 fallback
+
+        如果提供了 messages，直接使用（覆盖 system_prompt + user_prompt）。
         """
         return self._generate_with_retry(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
             model=model or self.model,
             retry=retry if retry is not None else self.max_retries,
             stream=False,
+            tools=tools,
+            tool_choice=tool_choice,
         )
 
     # ----- 流式生成 -----
@@ -279,16 +287,19 @@ class LLMClient:
         self,
         system_prompt: str,
         user_prompt: str,
-        temperature: float,
-        max_tokens: int,
-        model: str,
-        retry: int,
-        stream: bool,
+        messages: list[dict] | None = None,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        model: str | None = None,
+        retry: int = 0,
+        stream: bool = False,
         on_text: OnTextFn | None = None,
         tools: list[dict] | None = None,
         tool_choice: dict | None = None,
     ) -> LLMResponse:
         """带 retry + fallback 的核心调用"""
+        if model is None:
+            model = self.model
         last_error = ""
         models_to_try = [model] + [m for m in FALLBACK_MODELS if m != model]
 
@@ -305,6 +316,7 @@ class LLMClient:
                 return self._call(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
+                    messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     model=current_model,
@@ -348,24 +360,30 @@ class LLMClient:
         self,
         system_prompt: str,
         user_prompt: str,
-        temperature: float,
-        max_tokens: int,
-        model: str,
-        stream: bool,
+        messages: list[dict] | None = None,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        model: str | None = None,
+        stream: bool = False,
         on_text: OnTextFn | None = None,
         tools: list[dict] | None = None,
         tool_choice: dict | None = None,
     ) -> LLMResponse:
         """单次 LLM API 调用"""
+        if model is None:
+            model = self.model
         start_time = time.time()
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        if messages is not None:
+            msgs = messages
+        else:
+            msgs = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
 
         kwargs: dict[str, Any] = dict(
             model=model,
-            messages=messages,
+            messages=msgs,
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=self.timeout,

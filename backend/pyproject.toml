@@ -41,6 +41,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # tool_agent.py 将在 Agent Loop 工作流中重构
 "tool_agent.py" = ["F821", "F841", "N806"]
+# K 是 RRF 公式中标准常数名
+"memory/retrieval.py" = ["N806"]
 
 [tool.ruff.format]
 quote-style = "double"

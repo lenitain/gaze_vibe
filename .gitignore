@@ -38,3 +38,4 @@ Thumbs.db
 # Project-specific
 /docs/
 /tmp/
+backend/memory_data/
