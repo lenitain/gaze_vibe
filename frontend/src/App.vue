@@ -9,7 +9,7 @@ import FileViewer from './components/FileViewer.vue'
 import { FileIndexer } from './utils/fileIndexer.js'
 import { selectRelevantFiles, formatFilesForPrompt } from './utils/fileSelector.js'
 import { parseCodeBlocks } from './utils/codeParser.js'
-import { ALPHA, MIN_EYE_TIME, STRONG_WEIGHT } from './config.js'
+import { ALPHA, MIN_EYE_TIME, STRONG_WEIGHT, PERSONA_A_NAME, PERSONA_B_NAME, FONT_SCALE } from './config.js'
 import { createError, fromApiError, fromFileError, ErrorTypes } from './utils/errors.js'
 
 const isEyeTracking = ref(false)
@@ -362,7 +362,7 @@ function handleRegionSwitch({ from, to }) {
 </script>
 
 <template>
-  <div class="container">
+  <div class="container" :style="{ '--font-scale': FONT_SCALE }">
     <FolderSelector
       v-if="showFolderSelector"
       @select="handleFolderSelect"
@@ -432,6 +432,8 @@ function handleRegionSwitch({ from, to }) {
             :confidence="confidence"
             :answerSegmentsA="answerSegmentsA"
             :answerSegmentsB="answerSegmentsB"
+            :personaNameA="PERSONA_A_NAME"
+            :personaNameB="PERSONA_B_NAME"
             @choice="handleChoice"
           />
         </div>

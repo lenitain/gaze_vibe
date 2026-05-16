@@ -18,6 +18,8 @@ const props = defineProps({
   autoMode: Boolean,
   confidence: Number,
   answerSegmentsA: Array,
+  personaNameA: { type: String, default: 'Answer A' },
+  personaNameB: { type: String, default: 'Answer B' },
   answerSegmentsB: Array
 })
 
@@ -254,7 +256,7 @@ defineExpose({
       }"
     >
       <div class="answer-header">
-        <span class="badge detailed">详细解答</span>
+        <span class="badge detailed">{{ personaNameA }}</span>
         <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个文件</span>
         <span v-if="hasSegments && answerSegmentsA && answerSegmentsA.length > 1" class="segment-count">{{ answerSegmentsA.length }} 个片段</span>
         <span v-if="preferredSide === 'A' && !effectiveAutoMode" class="preference-hint">推断偏好</span>
@@ -326,7 +328,7 @@ defineExpose({
       }"
     >
       <div class="answer-header">
-        <span class="badge concise">简洁解答</span>
+        <span class="badge concise">{{ personaNameB }}</span>
         <span v-if="codeBlocksB.length > 0" class="block-count">{{ codeBlocksB.length }} 个文件</span>
         <span v-if="hasSegments && answerSegmentsB && answerSegmentsB.length > 1" class="segment-count">{{ answerSegmentsB.length }} 个片段</span>
         <span v-if="preferredSide === 'B' && !autoMode" class="preference-hint">推断偏好</span>

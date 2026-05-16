@@ -46,3 +46,12 @@ export const MAX_FILE_SIZE = 1024 * 1024 // 1MB
 
 // Eye tracker (EyeTracker.vue)
 export const DEBOUNCE_THRESHOLD = 80
+
+// Persona 名称（与 backend/personas/ YAML 中的 name 字段一致）
+export const PERSONA_A_NAME = '稳健派'
+export const PERSONA_B_NAME = '现代派'
+
+// 界面缩放
+// 修改数值即可整体调整 UI 大小
+// 1.0 = 原始大小, 0.7 = 70%
+export const FONT_SCALE = 0.7

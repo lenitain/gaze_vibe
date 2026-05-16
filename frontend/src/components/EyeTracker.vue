@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { DEBOUNCE_THRESHOLD } from '../config.js'
+import { DEBOUNCE_THRESHOLD, PERSONA_A_NAME, PERSONA_B_NAME } from '../config.js'
 
 const props = defineProps({
   diffOpen: {
@@ -567,7 +567,7 @@ defineExpose({
       
       <!-- 状态文字 -->
       <div class="status-text">
-        {{ isTracking ? (displayRegion === 'A' ? '详细' : displayRegion === 'B' ? '简洁' : '...') : '待机' }}
+        {{ isTracking ? (displayRegion === 'A' ? PERSONA_A_NAME : displayRegion === 'B' ? PERSONA_B_NAME : '...') : '待机' }}
       </div>
     </div>
   </div>
