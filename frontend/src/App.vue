@@ -34,6 +34,7 @@ const answerSegmentsB = ref([])
 
 const currentQuestion = ref('')
 const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
+const conversationHistory = ref([])
 const choiceSaved = ref(false)
 const error = ref(null)
 
