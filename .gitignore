@@ -10,15 +10,17 @@ dist/
 .venv/
 venv/
 .env/
+scripts/.venv/
 
 # Environment & config
 backend/.env
 backend/.venv/
 
 # Data & logs
-backend/experiment_data.jsonl
-backend/logs/
 *.log
+logs/
+backend/logs/
+backend/experiment_data.jsonl
 
 # Node
 node_modules/
