@@ -20,25 +20,29 @@ trap cleanup SIGINT SIGTERM
 
 echo "检查依赖..."
 
-# 后端: 检查 venv 和关键包
-if [ ! -f "backend/.venv/bin/python" ]; then
-    echo "[后] venv 不存在，请手动创建: cd backend && python3 -m venv .venv"
-    echo "[后] 然后运行: .venv/bin/pip install -r requirements.txt"
+# 后端: 检查 uv 和 venv
+if ! which uv &>/dev/null; then
+    echo "[后] uv 未安装，请先安装: curl -LsSf https://astral.sh/uv/install.sh | sh"
     exit 1
 fi
 
-# 检查关键包
-backend_pkgs="flask openai pydantic"
-missing=""
-for pkg in $backend_pkgs; do
-    if ! backend/.venv/bin/python -c "import $pkg" 2>/dev/null; then
-        missing="$missing $pkg"
-    fi
-done
-if [ -n "$missing" ]; then
-    echo "[后] 缺失依赖:$missing，尝试安装..."
-    backend/.venv/bin/pip install -r backend/requirements.txt -q
+cd backend
+
+if [ ! -f ".venv/bin/python" ]; then
+    echo "[后] venv 不存在，使用 uv 创建..."
+    uv venv
 fi
+
+# 检查并同步依赖
+if [ ! -f ".venv/bin/python" ]; then
+    echo "[后] 无法创建 venv，请手动: cd backend && uv venv"
+    exit 1
+fi
+
+echo "[后] 同步依赖..."
+uv pip sync requirements.txt -q 2>/dev/null || uv pip install -r requirements.txt -q
+
+cd ..
 
 # 前端: 检查 node_modules
 if [ ! -d "frontend/node_modules" ]; then
