@@ -31,6 +31,13 @@ const answerALength = ref(0)
 const answerBLength = ref(0)
 const answerSegmentsA = ref([])
 const answerSegmentsB = ref([])
+const abortController = ref(null)
+
+// 临时累加器：SSE 流式期间累积数据，全部完成后才写入正式 ref
+const _answerA = ref('')
+const _answerB = ref('')
+const _answerSegmentsA = ref([])
+const _answerSegmentsB = ref([])
 
 const currentQuestion = ref('')
 const userPreference = ref({ finalChoice: null, timeOnA: 0, timeOnB: 0, leftToRight: 0, rightToLeft: 0 })
@@ -116,12 +123,14 @@ async function handleFolderSelect(dirHandle) {
 async function handleSubmit(prompt) {
   // 保存上一轮对话到历史
   if (currentQuestion.value && (answerA.value || answerB.value)) {
+    const chosenSide = userPreference.value.finalChoice
     conversationHistory.value.push({
       question: currentQuestion.value,
       answerA: answerA.value,
       answerB: answerB.value,
       answerSegmentsA: [...answerSegmentsA.value],
       answerSegmentsB: [...answerSegmentsB.value],
+      chosenSide,
       timestamp: Date.now(),
     })
   }
@@ -129,6 +138,10 @@ async function handleSubmit(prompt) {
   currentQuestion.value = prompt
   isLoading.value = true
   answerPanelRef.value?.resetChoice()
+  _answerA.value = ''
+  _answerB.value = ''
+  _answerSegmentsA.value = []
+  _answerSegmentsB.value = []
   answerSegmentsA.value = []
   answerSegmentsB.value = []
   answerA.value = ''
@@ -156,8 +169,10 @@ async function handleSubmit(prompt) {
     userPreference.value.leftToRight = 0
     userPreference.value.rightToLeft = 0
   }
+  userPreference.value.finalChoice = null
 
   let eyeTrackingStarted = false
+  abortController.value = new AbortController()
 
   try {
     const response = await fetch('/api/ask', {
@@ -168,7 +183,8 @@ async function handleSubmit(prompt) {
         experimentMode: experimentMode.value,
         projectName: projectName.value,
         eyeData
-      })
+      }),
+      signal: abortController.value.signal
     })
     if (!response.ok) {
       throw new Error(`API 请求失败: ${response.status}`)
@@ -211,52 +227,39 @@ async function handleSubmit(prompt) {
           currentSegHint = parsed.contextHint || ''
         }
 
-        // --- text_delta: 文本增量（逐块推送） ---
+        // --- text_delta: 文本增量（逐块推送，写入临时累加器） ---
         if (eventType === 'text_delta') {
           const style = parsed.style
           const text = parsed.text || ''
           if (style === 'detailed') {
-            answerA.value += text
+            _answerA.value += text
           } else if (style === 'concise') {
-            answerB.value += text
+            _answerB.value += text
           }
-          answerALength.value = answerA.value.length
-          answerBLength.value = answerB.value.length
+          answerALength.value = _answerA.value.length
+          answerBLength.value = _answerB.value.length
         }
 
-        // --- text_end: 文本块结束 ---
+        // --- text_end: 文本块结束（写入临时累加器，不展示） ---
         if (eventType === 'text_end') {
           const style = parsed.style
           const segId = parsed.segmentId || currentSegId
           const segHint = currentSegHint
 
           if (style === 'detailed') {
-            answerSegmentsA.value = [...answerSegmentsA.value, {
+            _answerSegmentsA.value = [..._answerSegmentsA.value, {
               id: segId,
               contextHint: segHint,
-              content: parsed.fullText || answerA.value
+              content: parsed.fullText || _answerA.value
             }]
           } else if (style === 'concise') {
-            answerSegmentsB.value = [...answerSegmentsB.value, {
+            _answerSegmentsB.value = [..._answerSegmentsB.value, {
               id: segId,
               contextHint: segHint,
-              content: parsed.fullText || answerB.value
+              content: parsed.fullText || _answerB.value
             }]
           }
           segmentsArrived++
-
-          // 首个内容到达 → 关闭 loading，内容立即显示
-          isLoading.value = false
-
-          // 等待 DOM 渲染内容后，再启动眼动追踪（三者同时）
-          if (!eyeTrackingStarted && experimentMode.value !== 'control' && eyeTrackerRef.value && !isEyeTracking.value) {
-            nextTick(() => {
-              eyeTrackerRef.value.startTracking()
-              isEyeTracking.value = true
-              eyeTrackingStarted = true
-              decisionStartTime.value = Date.now()
-            })
-          }
         }
 
         // --- segment_end: 子问题结束 ---
@@ -271,9 +274,23 @@ async function handleSubmit(prompt) {
           console.log('[眼动状态]', parsed)
         }
 
-        // --- done: 全部完成 ---
+        // --- done: 全部完成 → 一次性写入正式 ref，展示答案 ---
         if (eventType === 'done') {
+          answerA.value = _answerA.value
+          answerB.value = _answerB.value
+          answerSegmentsA.value = _answerSegmentsA.value
+          answerSegmentsB.value = _answerSegmentsB.value
           isLoading.value = false
+
+          // 全部完成后才启动眼动追踪
+          if (!eyeTrackingStarted && experimentMode.value !== 'control' && eyeTrackerRef.value && !isEyeTracking.value) {
+            nextTick(() => {
+              eyeTrackerRef.value.startTracking()
+              isEyeTracking.value = true
+              eyeTrackingStarted = true
+              decisionStartTime.value = Date.now()
+            })
+          }
         }
 
         // --- error: 错误 ---
@@ -299,6 +316,10 @@ async function handleSubmit(prompt) {
       console.warn('AI response contains no code blocks')
     }
   } catch (err) {
+    if (err.name === 'AbortError') {
+      console.log('Generation stopped by user')
+      return
+    }
     console.error('Error:', err)
     error.value = fromApiError(err, '/api/ask')
     isLoading.value = false
@@ -347,6 +368,7 @@ async function handleChoice(side) {
       preference: userPreference.value,
       experimentMode: experimentMode.value,
       projectName: projectName.value,
+      currentQuestion: currentQuestion.value,
       emaBias: emaBias.value,
       confidence: confidence.value,
       decisionTime,
@@ -368,6 +390,18 @@ function handleEyeData(data) {
   } else if (data.region === 'B') {
     userPreference.value.timeOnB += data.duration
   }
+}
+
+function stopGeneration() {
+  if (abortController.value) {
+    abortController.value.abort()
+    abortController.value = null
+  }
+  isLoading.value = false
+  _answerA.value = ''
+  _answerB.value = ''
+  _answerSegmentsA.value = []
+  _answerSegmentsB.value = []
 }
 
 function handleRegionSwitch({ from, to }) {
@@ -429,6 +463,7 @@ function handleRegionSwitch({ from, to }) {
               :files="indexedFiles"
               :personaNameA="PERSONA_A_NAME"
               :personaNameB="PERSONA_B_NAME"
+              :chosenSide="item.chosenSide"
             />
           </div>
 
@@ -480,6 +515,10 @@ function handleRegionSwitch({ from, to }) {
             :disabled="isLoading"
             @submit="handleSubmit"
           />
+          <button v-if="isLoading" class="stop-btn" @click="stopGeneration" title="停止生成">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            停止
+          </button>
         </div>
 
         <div v-if="selectedFile" class="file-viewer-overlay" @click.self="selectedFile = null">
@@ -742,6 +781,8 @@ function handleRegionSwitch({ from, to }) {
 }
 
 .user-message {
+  display: flex;
+  justify-content: flex-end;
   padding: 8px 0;
 }
 
@@ -767,6 +808,25 @@ function handleRegionSwitch({ from, to }) {
   padding-left: 4px;
   color: var(--grey1);
   font-size: var(--font-sm);
+}
+
+.stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--bg2);
+  border: 1px solid var(--red);
+  border-radius: 4px;
+  color: var(--red);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.stop-btn:hover {
+  background: var(--red);
+  color: var(--bg0);
 }
 
 .waiting-indicator .spinner {

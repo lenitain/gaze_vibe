@@ -43,6 +43,7 @@ from memory.retrieval import format_context, retrieve
 from memory.store import MemoryStore
 from persona_loader import PersonaLoader
 from persona_state import (
+    classify_dimensions,
     get_persona_bias,
     get_prompt_scores,
     load_state,
@@ -400,6 +401,7 @@ def save_preference():
     answer_a_length = data.get("answerALength", 0)
     answer_b_length = data.get("answerBLength", 0)
     project_name = data.get("projectName", "default")
+    current_question = data.get("currentQuestion", "")
     persona_state = load_state(project_name)
 
     processed_scores = None
@@ -456,12 +458,24 @@ def save_preference():
     # 更新 Persona 状态
     final_choice = preference.get("finalChoice", None)
     if final_choice in ("A", "B") and persona_state:
-        updated_state = record_choice(persona_state, final_choice)
+        # 判断问题涉及哪些维度
+        relevant_dims = classify_dimensions(current_question) if current_question else None
+        if relevant_dims:
+            print(f"    问题涉及维度: {relevant_dims}")
+        else:
+            print("    无法判断问题维度，全部未收敛维度参与调整")
+
+        updated_state = record_choice(persona_state, final_choice, relevant_dims)
         save_state(project_name, updated_state)
         persona_gap = get_persona_bias(updated_state)
-        print(f"    Persona 偏差: {persona_gap:.4f} (已收敛={updated_state['converged']})")
-        if updated_state['converged']:
-            print("    Persona 已收敛，未选中侧进入随机探索模式")
+        converged_dims = [
+            dim for dim, info in updated_state.get('dimensions', {}).items()
+            if info.get('converged')
+        ]
+        all_done = updated_state.get('all_converged', False)
+        print(f"    Persona 偏差: {persona_gap:.4f} (收敛维度: {len(converged_dims)}/{len(updated_state.get('dimensions', {}))})")
+        if all_done:
+            print("    所有维度已收敛，未选中侧进入随机探索模式")
 
         # 保存 episodic 记忆
         mem = _get_memory(project_name)

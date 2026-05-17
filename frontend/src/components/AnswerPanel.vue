@@ -20,15 +20,24 @@ const props = defineProps({
   answerSegmentsA: Array,
   personaNameA: { type: String, default: 'Answer A' },
   personaNameB: { type: String, default: 'Answer B' },
-  answerSegmentsB: Array
+  answerSegmentsB: Array,
+  chosenSide: String  // 'A' | 'B' | null — 历史记录中已选中的答案侧，只展示该侧
 })
 
 const emit = defineEmits(['choice'])
 
-const selectedSide = ref(null)
-const choiceDisabled = ref(false)
+const selectedSide = ref(props.chosenSide || null)
+const choiceDisabled = ref(!!props.chosenSide)  // 历史记录直接锁定
 let autoSelected = false
 const overridden = ref(false)
+
+// 监听 chosenSide（历史记录场景）
+watch(() => props.chosenSide, (side) => {
+  if (side) {
+    selectedSide.value = side
+    choiceDisabled.value = true
+  }
+}, { immediate: false })
 const effectiveAutoMode = computed(() => props.autoMode && !overridden.value)
 const contentHeight = ref(800)
 let resizeObserver = null
@@ -250,9 +259,8 @@ defineExpose({
       :id="regionAId"
       :class="{
         selected: selectedSide === 'A',
-        hidden: choiceDisabled && selectedSide !== 'A' && !effectiveAutoMode,
-        collapsed: effectiveAutoMode && preferredSide === 'B',
-        expanded: effectiveAutoMode && preferredSide === 'A'
+        collapsed: (choiceDisabled && selectedSide === 'B') || (effectiveAutoMode && preferredSide === 'B'),
+        expanded: (choiceDisabled && selectedSide === 'A') || (effectiveAutoMode && preferredSide === 'A')
       }"
     >
       <div class="answer-header">
@@ -315,16 +323,15 @@ defineExpose({
       </button>
     </div>
 
-    <div class="divider" :class="{ hidden: choiceDisabled && !autoMode }"></div>
+    <div class="divider"></div>
 
     <div
       class="answer-col"
       :id="regionBId"
       :class="{
         selected: selectedSide === 'B',
-        hidden: choiceDisabled && selectedSide !== 'B' && !autoMode,
-        collapsed: autoMode && preferredSide === 'A',
-        expanded: autoMode && preferredSide === 'B'
+        collapsed: (choiceDisabled && selectedSide === 'A') || (autoMode && preferredSide === 'A'),
+        expanded: (choiceDisabled && selectedSide === 'B') || (autoMode && preferredSide === 'B')
       }"
     >
       <div class="answer-header">
@@ -391,10 +398,8 @@ defineExpose({
 
 <style scoped>
 .answer-panel {
-  flex: 1;
   display: flex;
   gap: 16px;
-  overflow: hidden;
   margin-bottom: 16px;
 }
 
@@ -407,15 +412,6 @@ defineExpose({
   overflow: hidden;
   overflow-y: auto;
   transition: all 0.4s ease;
-}
-
-.answer-col.hidden {
-  flex: 0;
-  width: 0;
-  opacity: 0;
-  overflow: hidden;
-  padding: 0;
-  margin: 0;
 }
 
 .answer-col.selected {
@@ -481,11 +477,6 @@ defineExpose({
   width: 2px;
   background: var(--bg3);
   transition: all 0.4s ease;
-}
-
-.divider.hidden {
-  width: 0;
-  opacity: 0;
 }
 
 .code-blocks {
