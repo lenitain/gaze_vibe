@@ -281,6 +281,93 @@ def plot_all_projects_summary(summaries: list[dict]):
     print(f"  跨项目对比: {path.name}")
 
 
+def plot_selected_dimensions(project: str, trajectory: dict):
+    """精选 3-4 个典型维度的 A/B 分数演化"""
+    if not trajectory:
+        return
+
+    # 精选维度：不同收敛速度的典型代表
+    selected = ["error_handling", "ecosystem_maturity", "naming_style", "testing_strategy"]
+    selected = [d for d in selected if d in trajectory]
+    if not selected:
+        return
+
+    colors = {"A": "#e24a4a", "B": "#4a90e2"}
+    fig, axes = plt.subplots(2, 2, figsize=(14, 8))
+    axes = axes.flatten()
+
+    for ax, dim in zip(axes, selected):
+        data = trajectory[dim]
+        steps = [d["step"] for d in data]
+        ax.plot(steps, [d["a"] for d in data], "o-", label="A (稳健派)",
+                color=colors["A"], markersize=4, linewidth=1.5)
+        ax.plot(steps, [d["b"] for d in data], "s--", label="B (现代派)",
+                color=colors["B"], markersize=4, linewidth=1.5)
+
+        # 收敛标记
+        for d in data:
+            if d["converged"]:
+                ax.axvline(x=d["step"], color="green", alpha=0.4,
+                           linewidth=1.5, linestyle=":", label="收敛点")
+                break
+
+        ax.set_title(f"{DIMS_LABEL.get(dim, dim)}", fontsize=11, fontweight="bold")
+        ax.set_ylabel("分数 (1-5)")
+        ax.set_ylim(0.5, 5.5)
+        ax.legend(fontsize=7, loc="lower right")
+        ax.grid(alpha=0.2)
+
+    fig.suptitle(f"精选维度 A/B 分数演化 — {project}", fontsize=13, y=1.02)
+    plt.tight_layout()
+    path = FIGURES_DIR / f"persona_selected_{project}.svg"
+    plt.savefig(path, format="svg")
+    plt.close()
+    print(f"  精选维度演化: {path.name}")
+
+
+def plot_dimension_heatmap(project: str, trajectory: dict):
+    """维度×轮次的 A 侧分数热图"""
+    if not trajectory:
+        return
+
+    dims = list(trajectory.keys())
+    max_steps = max(len(trajectory[d]) for d in dims)
+
+    data_matrix = np.full((len(dims), max_steps), np.nan)
+    for i, dim in enumerate(dims):
+        for entry in trajectory[dim]:
+            step = entry["step"] - 1
+            if step < max_steps:
+                data_matrix[i, step] = entry["a"]
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+    im = ax.imshow(data_matrix, cmap="RdYlBu_r", aspect="auto",
+                   vmin=1, vmax=5, interpolation="nearest")
+
+    dim_labels = [DIMS_LABEL.get(d, d) for d in dims]
+    ax.set_yticks(range(len(dims)))
+    ax.set_yticklabels(dim_labels, fontsize=9)
+    ax.set_xlabel("选择次数")
+    ax.set_title(f"维度分数热图（A侧） — {project}", fontsize=13)
+    cbar = plt.colorbar(im, ax=ax, shrink=0.6)
+    cbar.set_label("分数 (1-5)")
+
+    # 标注收敛维度
+    for i, dim in enumerate(dims):
+        for entry in trajectory[dim]:
+            if entry["converged"]:
+                step = entry["step"] - 1
+                ax.scatter(step, i, marker="*", color="lime", s=30,
+                          edgecolors="black", linewidth=0.5, zorder=3)
+                break
+
+    plt.tight_layout()
+    path = FIGURES_DIR / f"persona_heatmap_{project}.svg"
+    plt.savefig(path, format="svg")
+    plt.close()
+    print(f"  维度热图: {path.name}")
+
+
 # ===== 主流程 =====
 
 def main():
@@ -336,6 +423,8 @@ def main():
         if log:
             plot_convergence_timeline(project, log)
             plot_score_trajectory(project, tl["score_trajectory"])
+            plot_selected_dimensions(project, tl["score_trajectory"])
+            plot_dimension_heatmap(project, tl["score_trajectory"])
 
         # 当前状态的维度详情
         dims = state.get("dimensions", {})

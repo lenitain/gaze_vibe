@@ -468,6 +468,11 @@ def save_preference():
     current_question = data.get("currentQuestion", "")
     persona_state = load_state(project_name)
 
+    # ==== 实验场景追踪字段（场景 A/B/C/D/E 控制）====
+    scene_id = data.get("sceneId", "")          # 所属场景
+    expected_dim = data.get("expectedDim", "")  # 预期匹配维度（场景E）
+    control_side = data.get("controlSide", "")  # 控制策略: fixed_a / fixed_b / random
+
     processed_scores = None
     if eye_metrics:
         eye_data_for_process = {
@@ -486,6 +491,9 @@ def save_preference():
             processed_scores = eye_result.get("current_scores", {})
 
     experiment_data = {
+        "scene_id": scene_id,
+        "expected_dim": expected_dim,
+        "control_side": control_side,
         "projectName": project_name,
         "experimentMode": experiment_mode,
         "preference": preference,

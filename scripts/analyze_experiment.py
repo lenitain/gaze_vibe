@@ -463,8 +463,76 @@ class ExperimentAnalyzer:
         )
         print()
 
+        self._plot_dimension3_prediction(valid_df)
+
+    def _plot_dimension3_prediction(self, valid_df):
+        """Dimension 3: 调整分数预测能力可视化"""
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        fig.suptitle("Dimension 3: 调整分数预测能力", fontsize=14)
+
+        # 按轮次分组
+        def round_group(r):
+            if r <= 3:
+                return "1-3"
+            elif r <= 6:
+                return "4-6"
+            else:
+                return "7+"
+
+        valid_df["round_group"] = valid_df["round_count"].apply(round_group)
+        group_order = ["1-3", "4-6", "7+"]
+
+        # 子图1: 每组的 detail_score 与选择的点二列相关
+        ax = axes[0]
+        groups = []
+        for g in group_order:
+            gdf = valid_df[valid_df["round_group"] == g].dropna(subset=["detail_score", "choice_numeric"])
+            if len(gdf) > 3:
+                corr, p_val = pointbiserialr(gdf["detail_score"], gdf["choice_numeric"])
+                groups.append({"group": g, "r": corr, "p": p_val, "n": len(gdf)})
+
+        if groups:
+            x = np.arange(len(groups))
+            colors = []
+            for g in groups:
+                colors.append("#4a90e2" if g["p"] < 0.05 else "#cccccc")
+            ax.bar(x, [g["r"] for g in groups], color=colors, width=0.5)
+            ax.set_xticks(x)
+            ax.set_xticklabels([f"第{g['group']}轮\n(n={g['n']})" for g in groups])
+            ax.set_ylabel("点二列相关系数 r")
+            ax.set_title("detail_score 与选择的相关系数（按轮次）")
+            ax.axhline(y=0, color="gray", linestyle="-", alpha=0.5)
+            ax.grid(axis="y", alpha=0.2)
+
+            # 标注显著性
+            for i, g in enumerate(groups):
+                sig = "*" if g["p"] < 0.05 else ""
+                ax.text(i, g["r"] + 0.02, f"r={g['r']:.3f}{sig}",
+                        ha="center", fontsize=9)
+
+        # 子图2: detail_score vs explanation_score 的散点图
+        ax = axes[1]
+        scatter = ax.scatter(
+            valid_df["detail_score"], valid_df["explanation_score"],
+            c=valid_df["choice_numeric"], cmap="coolwarm", alpha=0.6,
+            edgecolors="gray", linewidth=0.5
+        )
+        ax.set_xlabel("detail_score")
+        ax.set_ylabel("explanation_score")
+        ax.set_title("调整分数平面中的选择分布（红=选A, 蓝=选B）")
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_ticks([0, 1])
+        cbar.set_ticklabels(["选B", "选A"])
+        ax.grid(alpha=0.2)
+
+        plt.tight_layout()
+        path = self.figures_dir / "dimension3_prediction_power.svg"
+        plt.savefig(path, format="svg")
+        plt.close()
+        print(f"  Chart saved: {path}")
+        print()
+
     def analyze_dimension4_ema_convergence(self):
-        """验证维度4：EMA收敛性"""
         print("=" * 60)
         print("  验证维度4：EMA收敛性")
         print("=" * 60)
