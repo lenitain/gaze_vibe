@@ -28,8 +28,6 @@ const emit = defineEmits(['choice'])
 
 const selectedSide = ref(props.chosenSide || null)
 const choiceDisabled = ref(!!props.chosenSide)  // 历史记录直接锁定
-let autoSelected = false
-const overridden = ref(false)
 
 // 监听 chosenSide（历史记录场景）
 watch(() => props.chosenSide, (side) => {
@@ -38,7 +36,6 @@ watch(() => props.chosenSide, (side) => {
     choiceDisabled.value = true
   }
 }, { immediate: false })
-const effectiveAutoMode = computed(() => props.autoMode && !overridden.value)
 const contentHeight = ref(800)
 let resizeObserver = null
 
@@ -78,21 +75,7 @@ const hasSegments = computed(() =>
   (props.answerSegmentsB && props.answerSegmentsB.length > 1)
 )
 
-watch(() => props.autoMode, (isAuto) => {
-  if (isAuto && props.preferredSide && !selectedSide.value && !autoSelected) {
-    selectedSide.value = props.preferredSide
-    choiceDisabled.value = true
-    autoSelected = true
-    overridden.value = false
-  }
-}, { immediate: true })
 
-function handleOverride() {
-  selectedSide.value = null
-  choiceDisabled.value = false
-  autoSelected = false
-  overridden.value = true
-}
 
 const regionAId = 'answer-region-a'
 const regionBId = 'answer-region-b'
@@ -246,8 +229,6 @@ defineExpose({
   resetChoice() {
     selectedSide.value = null
     choiceDisabled.value = false
-    autoSelected = false
-    overridden.value = false
   }
 })
 </script>
@@ -266,7 +247,7 @@ defineExpose({
         <span class="badge detailed">{{ personaNameA }}</span>
         <span v-if="codeBlocksA.length > 0" class="block-count">{{ codeBlocksA.length }} 个文件</span>
         <span v-if="hasSegments && answerSegmentsA && answerSegmentsA.length > 1" class="segment-count">{{ answerSegmentsA.length }} 个片段</span>
-        <span v-if="preferredSide === 'A' && !effectiveAutoMode" class="preference-hint">推断偏好</span>
+        <span v-if="preferredSide === 'A'" class="preference-hint">推断偏好</span>
       </div>
       <div class="answer-content" ref="contentRef" :class="{ selected: selectedSide === 'A' }">
         <div v-if="isLoading" class="loading">
@@ -339,7 +320,7 @@ defineExpose({
         <span class="badge concise">{{ personaNameB }}</span>
         <span v-if="codeBlocksB.length > 0" class="block-count">{{ codeBlocksB.length }} 个文件</span>
         <span v-if="hasSegments && answerSegmentsB && answerSegmentsB.length > 1" class="segment-count">{{ answerSegmentsB.length }} 个片段</span>
-        <span v-if="preferredSide === 'B' && !autoMode" class="preference-hint">推断偏好</span>
+        <span v-if="preferredSide === 'B'" class="preference-hint">推断偏好</span>
       </div>
       <div class="answer-content" :class="{ selected: selectedSide === 'B' }">
         <div v-if="isLoading" class="loading">
