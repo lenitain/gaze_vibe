@@ -259,8 +259,7 @@ defineExpose({
       :id="regionAId"
       :class="{
         selected: selectedSide === 'A',
-        collapsed: (choiceDisabled && selectedSide === 'B') || (effectiveAutoMode && preferredSide === 'B'),
-        expanded: (choiceDisabled && selectedSide === 'A') || (effectiveAutoMode && preferredSide === 'A')
+        focused: (choiceDisabled && selectedSide === 'A') || (!choiceDisabled && preferredSide === 'A')
       }"
     >
       <div class="answer-header">
@@ -315,7 +314,10 @@ defineExpose({
       </div>
       <button
         class="choose-btn"
-        :class="{ selected: selectedSide === 'A' }"
+        :class="{
+          chosen: selectedSide === 'A',
+          unchosen: choiceDisabled && selectedSide !== 'A'
+        }"
         @click="selectA"
         :disabled="!answerA || isLoading || choiceDisabled"
       >
@@ -330,8 +332,7 @@ defineExpose({
       :id="regionBId"
       :class="{
         selected: selectedSide === 'B',
-        collapsed: (choiceDisabled && selectedSide === 'A') || (autoMode && preferredSide === 'A'),
-        expanded: (choiceDisabled && selectedSide === 'B') || (autoMode && preferredSide === 'B')
+        focused: (choiceDisabled && selectedSide === 'B') || (!choiceDisabled && preferredSide === 'B')
       }"
     >
       <div class="answer-header">
@@ -386,7 +387,10 @@ defineExpose({
       </div>
       <button
         class="choose-btn"
-        :class="{ selected: selectedSide === 'B' }"
+        :class="{
+          chosen: selectedSide === 'B',
+          unchosen: choiceDisabled && selectedSide !== 'B'
+        }"
         @click="selectB"
         :disabled="!answerB || isLoading || choiceDisabled"
       >
@@ -414,17 +418,12 @@ defineExpose({
   transition: all 0.4s ease;
 }
 
-.answer-col.selected {
-  flex: 1;
-}
-
-.answer-col.collapsed {
-  flex: 0.3;
-  min-width: 200px;
-}
-
-.answer-col.expanded {
-  flex: 0.7;
+.answer-col.focused {
+  position: relative;
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+  box-shadow: 0 0 12px rgba(98, 155, 206, 0.15);
+  border-radius: 12px;
 }
 
 .answer-header {
@@ -558,14 +557,25 @@ defineExpose({
   cursor: not-allowed;
 }
 
-.choose-btn.selected {
+.choose-btn.chosen {
   background: var(--green);
   cursor: default;
 }
 
-.choose-btn.selected:disabled {
+.choose-btn.chosen:disabled {
   background: var(--green);
   color: var(--bg0);
+}
+
+.choose-btn.unchosen {
+  background: var(--bg3);
+  color: var(--grey2);
+  cursor: default;
+}
+
+.choose-btn.unchosen:disabled {
+  background: var(--bg3);
+  color: var(--grey2);
 }
 
 .text-container {
