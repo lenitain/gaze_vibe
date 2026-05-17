@@ -41,7 +41,7 @@ from llm_logger import LLMLogger
 from memory.extractor import extract_semantic_memories
 from memory.retrieval import format_context, retrieve
 from memory.store import MemoryStore
-from persona_loader import PersonaLoader
+from persona_loader import DIMENSION_DESCRIPTIONS, DIMENSION_PRIORITY, PersonaLoader
 from persona_state import (
     classify_dimensions,
     get_persona_bias,
@@ -265,6 +265,69 @@ def split_user_question(prompt, context_files, max_sub_questions=4):
         return None
 
 
+# ===== LLM 维度分类 =====
+
+def classify_dimensions_llm(question: str) -> list[str] | None:
+    """
+    使用 LLM 判断用户问题涉及哪些维度。
+
+    比关键词匹配更准确，能处理"这个 toml crate 依赖太重了"这种复合语义。
+    返回维度名称列表，失败返回 None（由调用方回退到关键词）。
+    """
+    # 构建维度描述
+    dim_parts = []
+    for dim in DIMENSION_PRIORITY:
+        desc = DIMENSION_DESCRIPTIONS.get(dim, {})
+        label = {
+            "ecosystem_maturity": "生态成熟度",
+            "correctness_strategy": "正确性策略",
+            "naming_style": "命名风格",
+            "documentation_depth": "文档深度",
+            "error_handling": "错误处理",
+            "edge_case_coverage": "边界覆盖",
+            "dependency_philosophy": "依赖哲学",
+            "abstraction_timing": "抽象时机",
+            "testing_strategy": "测试策略",
+            "performance_priority": "性能优先级",
+        }.get(dim, dim)
+        extremes = f"{desc.get(1, '')} ↔ {desc.get(5, '')}" if desc else ""
+        dim_parts.append(f"- {label} ({dim}): {extremes}")
+
+    dim_descriptions = "\n".join(dim_parts)
+
+    system_prompt = f"""你是一个编程问题维度分析器。
+
+用户会输入一个编程问题，你需要判断它涉及以下哪些维度（可多选）：
+
+{dim_descriptions}
+
+只返回 JSON 数组，如 ["error_handling", "testing_strategy"]。
+如果问题不涉及任何特定维度，返回 []。
+不要解释，只输出 JSON。"""
+
+    try:
+        response = llm_client.generate(
+            system_prompt=system_prompt,
+            user_prompt=question,
+            temperature=0.1,
+            max_tokens=100,
+        )
+        raw = response.text.strip()
+        # 提取 JSON 数组
+        import json
+        match = re.search(r'\[[\s\S]*?\]', raw)
+        if match:
+            dims = json.loads(match.group())
+            if isinstance(dims, list):
+                # 过滤有效维度
+                valid = [d for d in dims if d in DIMENSION_PRIORITY]
+                return valid if valid else None
+    except Exception as e:
+        print(f"    LLM 维度分类失败: {e}")
+
+    return None
+
+
 # ===== API 路由 =====
 
 @app.route("/api/ask", methods=["POST"])
@@ -459,11 +522,18 @@ def save_preference():
     final_choice = preference.get("finalChoice", None)
     if final_choice in ("A", "B") and persona_state:
         # 判断问题涉及哪些维度
-        relevant_dims = classify_dimensions(current_question) if current_question else None
-        if relevant_dims:
-            print(f"    问题涉及维度: {relevant_dims}")
-        else:
-            print("    无法判断问题维度，全部未收敛维度参与调整")
+        # 先用 LLM 分类，失败回退到关键词
+        relevant_dims = None
+        if current_question:
+            relevant_dims = classify_dimensions_llm(current_question)
+            if relevant_dims is not None:
+                print(f"    LLM 维度分类: {relevant_dims}")
+            else:
+                relevant_dims = classify_dimensions(current_question)
+                if relevant_dims:
+                    print(f"    关键词维度分类: {relevant_dims}")
+                else:
+                    print("    无法判断问题维度，全部未收敛维度参与调整")
 
         updated_state = record_choice(persona_state, final_choice, relevant_dims)
         save_state(project_name, updated_state)
