@@ -13,6 +13,7 @@ Persona 多维动态调整 + 维度级收敛（按项目名隔离）
 
 import json
 import random
+from datetime import datetime
 from pathlib import Path
 
 from persona_loader import DIMENSION_DESCRIPTIONS, DIMENSION_PRIORITY, PersonaLoader
@@ -53,6 +54,13 @@ def _state_path(project_name: str) -> Path:
     safe = project_name.replace("/", "_").replace("\\", "_")
     _STATES_DIR.mkdir(parents=True, exist_ok=True)
     return _STATES_DIR / f"{safe}.json"
+
+
+def _log_path(project_name: str) -> Path:
+    """状态变更日志路径（JSONL 格式）"""
+    safe = project_name.replace("/", "_").replace("\\", "_")
+    _STATES_DIR.mkdir(parents=True, exist_ok=True)
+    return _STATES_DIR / f"{safe}.log.jsonl"
 
 
 def load_state(project_name: str = "default") -> dict:
@@ -382,6 +390,38 @@ def get_prompt_scores(state: dict, side: str) -> dict:
             result["scores"][dim] = avg
 
     return result
+
+
+def log_state_change(state: dict, project_name: str):
+    """
+    记录一次状态变更到 {project_name}.log.jsonl 文件。
+
+    由 app.py 在 save_state 后调用，确保 project_name 可用。
+    """
+    if "dimensions" not in state:
+        return
+
+    dims = state["dimensions"]
+    record = {
+        "timestamp": datetime.now().isoformat(),
+        "all_converged": state.get("all_converged", False),
+        "persona_bias": state.get("persona_bias", 0.0),
+        "dimensions": {
+            dim: {
+                "converged": info.get("converged", False),
+                "adjustments": info.get("adjustments", 0),
+                "preferred_side": info.get("preferred_side"),
+                "opposite_count": info.get("opposite_count", 0),
+            }
+            for dim, info in dims.items()
+        },
+        "persona_a_scores": dict(state.get("persona_a", {}).get("scores", {})),
+        "persona_b_scores": dict(state.get("persona_b", {}).get("scores", {})),
+    }
+
+    path = _log_path(project_name)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def _explore_random(scores: dict):

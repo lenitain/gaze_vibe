@@ -35,8 +35,12 @@ echo "2/3: LLM 调用日志分析..."
 uv run python analyze_llm_logs.py
 
 # 运行记忆系统分析
-echo "3/3: 记忆系统分析..."
+echo "3/4: 记忆系统分析..."
 uv run python analyze_memory.py
+
+# 运行 Persona 系统分析
+echo "4/4: Persona 系统分析..."
+uv run python analyze_persona.py
 
 echo ""
 echo "所有分析完成！图表已保存到 docs/figures/"

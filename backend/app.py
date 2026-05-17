@@ -47,6 +47,7 @@ from persona_state import (
     get_persona_bias,
     get_prompt_scores,
     load_state,
+    log_state_change,
     record_choice,
     reset_state,
     save_state,
@@ -485,6 +486,7 @@ def save_preference():
             processed_scores = eye_result.get("current_scores", {})
 
     experiment_data = {
+        "projectName": project_name,
         "experimentMode": experiment_mode,
         "preference": preference,
         "eyeMetrics": eye_metrics,
@@ -537,6 +539,7 @@ def save_preference():
 
         updated_state = record_choice(persona_state, final_choice, relevant_dims)
         save_state(project_name, updated_state)
+        log_state_change(updated_state, project_name)
         persona_gap = get_persona_bias(updated_state)
         converged_dims = [
             dim for dim, info in updated_state.get('dimensions', {}).items()
@@ -572,7 +575,7 @@ def save_preference():
     print("\n  LLM 调用统计:")
     summary = llm_logger.session_summary()
     print(f"    总调用: {summary['total_calls']}")
-    print(f"    成功: {summary['successful']}")
+    print(f"    成功: {summary.get('successful', 0)}")
     print(f"    总 Token: {summary['total_tokens']}")
     print(f"    平均延迟: {summary['avg_latency_ms']}ms")
     print("─" * 60 + "\n")

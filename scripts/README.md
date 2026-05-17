@@ -27,6 +27,9 @@ cd scripts && uv run python analyze_memory.py         # 记忆系统
 | `dimension6_mode_comparison.svg` | experiment_data | 模式对比分析 |
 | `llm_token_trend.svg` | llm_calls_*.jsonl | Token 消耗趋势 |
 | `memory_accumulation.svg` | items.jsonl | 记忆积累趋势 |
+| `persona_convergence_{project}.svg` | persona_states/*.log.jsonl | 维度收敛时间线 |
+| `persona_scores_{project}.svg` | persona_states/*.log.jsonl | A/B 分数演化 |
+| `persona_all_projects.svg` | persona_states/*.json | 跨项目对比 |
 
 ## 分析维度
 
@@ -49,3 +52,10 @@ cd scripts && uv run python analyze_memory.py         # 记忆系统
 - 置信度分析
 - 记忆积累趋势
 - Persona 偏好信号分布
+
+### Persona 系统 (analyze_persona.py)
+- 当前维度收敛状态（收敛数/总数、偏好方向）
+- 收敛事件追踪（何时收敛、偏好哪侧）
+- 衰减事件追踪（何时解除收敛）
+- 各维度 A/B 分数演化曲线
+- 跨项目收敛率对比
