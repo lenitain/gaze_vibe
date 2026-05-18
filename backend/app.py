@@ -38,6 +38,7 @@ from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
 # === 新架构模块 ===
 from llm_client import LLMClient, LLMError
 from llm_logger import LLMLogger
+from agent_loop import AgentLoop
 from memory.extractor import extract_semantic_memories
 from memory.retrieval import format_context, retrieve
 from memory.store import MemoryStore
@@ -113,14 +114,21 @@ def _get_session(project_name: str = "default") -> "Session":
     return Session(session_storage, project_name)
 
 
-def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_state=None):
+def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_state=None, project_root=None):
     """
     生成两个不同风格的答案
 
     使用新架构：
     - PromptBuilder 组装 prompt
-    - LLMClient.generate() 带 retry
+    - AgentLoop（有 project_root 时）或 LLMClient.generate()（无工具时）
     - SSEEvents 推送眼动状态
+
+    Args:
+        prompt: 用户问题
+        context_files: 上下文文件列表
+        eye_data: 眼动数据
+        persona_state: Persona 状态
+        project_root: 项目根目录（提供时启用 AgentLoop + 文件工具）
     """
     print("\n" + "─" * 60)
     # 完整显示用户问题，不截断
@@ -192,40 +200,94 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_sta
         elif adjustments["detail_score"] < 0.4:
             print("    → 简洁解答 prompt: 增加简洁程度指令")
 
-    # 3. 使用 LLMClient 生成（带 retry + 精确 token 统计）
+    # 3. 判断是否启用 AgentLoop（有项目根目录时）
+    use_agent = project_root is not None and project_root.strip() != ""
+
+    if use_agent:
+        from tool import default_tools
+        tools = default_tools(project_root)
+        agent = AgentLoop(llm_client, tools)
+        tool_hint = (
+            "\n\n[工具说明]\n"
+            "你可以使用以下工具操作项目文件：\n"
+            "- read_file: 读取项目文件\n"
+            "- write_file: 创建/更新文件\n"
+            "- search_code: 在项目中搜索代码\n"
+            "- list_files: 列出项目目录结构\n"
+            "- create_directory: 创建目录\n"
+            "请根据需要调用工具完成任务，最后给出清晰的文字总结。"
+        )
+        prompt_a_with_tools = prompt_a + tool_hint
+        prompt_b_with_tools = prompt_b + tool_hint
+        print(f"\n  启用 AgentLoop (project_root={project_root})")
+    else:
+        prompt_a_with_tools = prompt_a
+        prompt_b_with_tools = prompt_b
+        agent = None
+        print("\n  标准模式（无 project_root，直接 LLM 调用）")
+
+    # 4. 生成
     try:
-        print("\n  调用 DeepSeek API (LLMClient)...")
+        if use_agent:
+            print("\n  调用 AgentLoop（静默执行 tool_calls）...")
 
-        # 生成 Answer A（详细）
-        response_a = llm_client.generate(
-            system_prompt=prompt_a,
-            user_prompt=prompt,
-            temperature=ANSWER_TEMPERATURE,
-            max_tokens=ANSWER_MAX_TOKENS,
-        )
-        answer_a = response_a.text
-        print(f"    ✓ 详细解答生成完成 ({len(answer_a)} 字符, {response_a.usage.total_tokens} tokens)")
+            # Answer A
+            result_a = agent.run(system_prompt=prompt_a_with_tools, user_prompt=prompt)
+            answer_a = result_a.text
+            print(f"    ✓ 详细解答生成完成 ({len(answer_a)} 字符, {result_a.turn_count} 轮)")
+            if result_a.tool_calls:
+                print(f"      中间调用了 {len(result_a.tool_calls)} 次工具")
 
-        # 生成 Answer B（简洁）
-        response_b = llm_client.generate(
-            system_prompt=prompt_b,
-            user_prompt=prompt,
-            temperature=ANSWER_TEMPERATURE,
-            max_tokens=ANSWER_MAX_TOKENS,
-        )
-        answer_b = response_b.text
-        print(f"    ✓ 简洁解答生成完成 ({len(answer_b)} 字符, {response_b.usage.total_tokens} tokens)")
+            # Answer B
+            result_b = agent.run(system_prompt=prompt_b_with_tools, user_prompt=prompt)
+            answer_b = result_b.text
+            print(f"    ✓ 简洁解答生成完成 ({len(answer_b)} 字符, {result_b.turn_count} 轮)")
+            if result_b.tool_calls:
+                print(f"      中间调用了 {len(result_b.tool_calls)} 次工具")
+        else:
+            print("\n  调用 DeepSeek API (LLMClient)...")
+
+            # 生成 Answer A（详细）
+            response_a = llm_client.generate(
+                system_prompt=prompt_a,
+                user_prompt=prompt,
+                temperature=ANSWER_TEMPERATURE,
+                max_tokens=ANSWER_MAX_TOKENS,
+            )
+            answer_a = response_a.text
+            print(f"    ✓ 详细解答生成完成 ({len(answer_a)} 字符, {response_a.usage.total_tokens} tokens)")
+
+            # 生成 Answer B（简洁）
+            response_b = llm_client.generate(
+                system_prompt=prompt_b,
+                user_prompt=prompt,
+                temperature=ANSWER_TEMPERATURE,
+                max_tokens=ANSWER_MAX_TOKENS,
+            )
+            answer_b = response_b.text
+            print(f"    ✓ 简洁解答生成完成 ({len(answer_b)} 字符, {response_b.usage.total_tokens} tokens)")
 
         result = {
             "answerA": answer_a,
             "answerB": answer_b,
             "success": True,
             "adjustments": adjustments,
-            "usage": {
+        }
+
+        if use_agent:
+            result["usage"] = {
+                "a": {"tokens": 0, "latency_ms": 0, "turn_count": result_a.turn_count, "tool_calls": len(result_a.tool_calls)},
+                "b": {"tokens": 0, "latency_ms": 0, "turn_count": result_b.turn_count, "tool_calls": len(result_b.tool_calls)},
+            }
+            result["agent_log"] = {
+                "a": result_a.tool_calls,
+                "b": result_b.tool_calls,
+            }
+        else:
+            result["usage"] = {
                 "a": {"tokens": response_a.usage.total_tokens, "latency_ms": response_a.latency_ms},
                 "b": {"tokens": response_b.usage.total_tokens, "latency_ms": response_b.latency_ms},
-            },
-        }
+            }
 
         if eye_result:
             result["eyeProcessing"] = {
@@ -392,6 +454,7 @@ def ask():
     experiment_mode = data.get("experimentMode", "full")
     eye_data = data.get("eyeData")
     project_name = data.get("projectName", "default")
+    project_root = data.get("projectRoot")
     persona_state = load_state(project_name)
 
     if not prompt:
@@ -439,7 +502,7 @@ def ask():
             # SSE: 子问题开始 + session/turn 事件
             yield create_segment_start(i, len(sub_questions), sq["id"], sq.get("contextHint", ""))
 
-            result = generate_dual_answers(full_prompt, context_files, eye_data, persona_state)
+            result = generate_dual_answers(full_prompt, context_files, eye_data, persona_state, project_root)
 
             # SSE: 推送眼动状态
             if result.get("eyeProcessing"):
@@ -497,6 +560,7 @@ def ask_batch():
     data = request.json
     prompt = data.get("prompt", "")
     context_files = data.get("contextFiles", [])
+    project_root = data.get("projectRoot")
     persona_state = data.get("personaState")
 
     if not prompt:
@@ -511,7 +575,7 @@ def ask_batch():
         for i, sq in enumerate(sub_questions):
             yield create_segment_start(i, len(sub_questions), sq["id"], sq.get("contextHint", ""))
 
-            result = generate_dual_answers(sq["prompt"], context_files, persona_state=persona_state)
+            result = generate_dual_answers(sq["prompt"], context_files, persona_state=persona_state, project_root=project_root)
             yield create_text_delta(sq["id"], "detailed", result.get("answerA", ""))
             yield create_text_end(sq["id"], "detailed", result.get("answerA", ""))
             yield create_text_delta(sq["id"], "concise", result.get("answerB", ""))
