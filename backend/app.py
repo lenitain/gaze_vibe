@@ -528,6 +528,16 @@ def save_preference():
     print(f"    详细程度偏好: {adjustments['detail_score']:.4f}")
     print(f"    解释/代码偏好: {adjustments['explanation_score']:.4f}")
 
+    # 从眼动数据计算置信度，传给 Persona 维度更新
+    eye_confidence = None
+    eye_bias = None
+    if eye_result and eye_result.get("valid"):
+        bias_val = eye_result.get("persona_bias", 0.5)
+        strength = min(1.0, abs(bias_val - 0.5) * 4)
+        maturity = min(1.0, eye_result.get("round_count", 1) / 3)
+        eye_confidence = strength * maturity
+        eye_bias = bias_val
+
     # 更新 Persona 状态
     final_choice = preference.get("finalChoice", None)
     if final_choice in ("A", "B") and persona_state:
@@ -545,7 +555,17 @@ def save_preference():
                 else:
                     print("    无法判断问题维度，全部未收敛维度参与调整")
 
-        updated_state = record_choice(persona_state, final_choice, relevant_dims)
+        updated_state = record_choice(
+            persona_state, final_choice, relevant_dims,
+            eye_confidence=eye_confidence,
+            eye_bias=eye_bias,
+        )
+        if eye_confidence is not None:
+            eye_side = "A" if (eye_bias or 0.5) > 0.5 else "B"
+            consistent = "一致" if eye_side == final_choice else "矛盾"
+            print(f"    眼动调制: conf={eye_confidence:.2f}, bias={eye_bias or 0.5:.2f} (眼动偏{eye_side}, 选{final_choice}, {consistent})")
+        else:
+            print("    眼动调制: 无眼动数据，使用基础调整速度")
         save_state(project_name, updated_state)
         log_state_change(updated_state, project_name)
         persona_gap = get_persona_bias(updated_state)

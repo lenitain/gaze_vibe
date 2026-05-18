@@ -198,13 +198,65 @@ def _ensure_dim_fields(dim_info: dict, dim: str | None = None) -> dict:
     return dim_info
 
 
-def record_choice(state: dict, chosen_side: str, relevant_dims: list[str] | None = None) -> dict:
+def _compute_eye_alpha(base_alpha: float, eye_confidence: float | None, eye_bias: float | None, chosen_side: str) -> float:
+    """
+    用眼动数据调制 EMA alpha。
+
+    核心思想：
+    - 眼动置信度高（用户明显偏好所选侧）→ 调整幅度大，收敛快
+    - 眼动置信度低（用户犹豫/随便选）→ 调整幅度小，收敛慢
+    - 眼动方向与选择矛盾（眼看B却选了A）→ 额外减速，保守处理
+
+    Args:
+        base_alpha: 维度基础 EMA 系数
+        eye_confidence: 眼动置信度 (0~1)，None 表示无眼动数据
+        eye_bias: 眼动 persona_bias (0~1)，>0.5 偏向 A，<0.5 偏向 B
+        chosen_side: 用户最终选择的侧别 "A" 或 "B"
+
+    Returns:
+        调制后的 alpha 值
+    """
+    if eye_confidence is None:
+        # 无眼动数据时使用原始 alpha
+        return base_alpha
+
+    # 1. 置信度因子：置信度高 → 调整快；置信度低 → 调整慢
+    # 将 [0, 1] 映射到 [0.5, 1.0]，确保至少保留 50% 的调整能力
+    confidence_modifier = 0.5 + 0.5 * eye_confidence
+
+    # 2. 一致性检测：眼动偏向方向 vs 实际选择方向
+    consistency_penalty = 1.0
+    if eye_bias is not None:
+        eye_preferred = "A" if eye_bias > 0.5 else "B"
+        if eye_preferred != chosen_side:
+            # 眼动数据和选择矛盾 → 可能是探索或误操作 → 保守调整
+            # 置信度越高矛盾越大 → 惩罚越大
+            # 矛盾时：眼动高置信度 → 这可能是故意探索 → alpha 砍半
+            #        眼动低置信度 → 用户本来就在犹豫 → 慢慢来
+            consistency_penalty = 0.5
+
+    adjusted = base_alpha * confidence_modifier * consistency_penalty
+    # 限制最小 alpha，防止完全停止学习
+    return max(0.1, min(base_alpha, adjusted))
+
+
+def record_choice(
+    state: dict,
+    chosen_side: str,
+    relevant_dims: list[str] | None = None,
+    eye_confidence: float | None = None,
+    eye_bias: float | None = None,
+) -> dict:
     """
     记录用户选择，返回更新后的 state dict。
 
     只调整与问题相关的维度（relevant_dims），其余维度不动。
     若 relevant_dims 为 None 或空，则调整全部未收敛维度。
     各维度独立收敛检测，收敛后有反转信号则解除收敛。
+
+    眼动数据（eye_confidence, eye_bias）用于调制维度调整的速度：
+    - 高置信度 + 方向一致 → 快速收敛
+    - 低置信度或矛盾 → 保守收敛
     """
     persona_a = state["persona_a"]["scores"]
     persona_b = state["persona_b"]["scores"]
@@ -268,7 +320,8 @@ def record_choice(state: dict, chosen_side: str, relevant_dims: list[str] | None
             continue
 
         # ---- 未收敛维度：调整逻辑 ----
-        alpha = DIMENSION_ALPHA.get(dim, 0.3)
+        base_alpha = DIMENSION_ALPHA.get(dim, 0.3)
+        alpha = _compute_eye_alpha(base_alpha, eye_confidence, eye_bias, chosen_side)
 
         if gap < MIN_DIFF_TO_ADJUST:
             # 差距很小，标记为收敛
