@@ -10,6 +10,7 @@ AI 工程架构：
 - LLMLogger: 调用日志与上下文管理
 """
 
+import copy
 import json
 import os
 import re
@@ -23,6 +24,7 @@ from config import (
     ALPHA,
     ANSWER_MAX_TOKENS,
     ANSWER_TEMPERATURE,
+    EXPERIMENT_DATA_PATH,
     LLM_BASE_URL,
     LLM_MAX_RETRIES,
     LLM_MODEL,
@@ -491,6 +493,29 @@ def ask():
     return Response(generate(), mimetype="text/event-stream")
 
 
+def _snapshot_persona_for_experiment(state: dict | None) -> dict | None:
+    """
+    提取 Persona 状态中实验分析所需的关键字段（轻量快照）。
+    完整状态太大，只保留 A/B 分数、维度收敛信息。
+    """
+    if state is None:
+        return None
+    try:
+        return {
+            "persona_a_scores": state.get("persona_a", {}).get("scores", {}),
+            "persona_b_scores": state.get("persona_b", {}).get("scores", {}),
+            "dimensions": {
+                dim: {
+                    k: info.get(k) for k in ("converged", "adjustments", "preferred_side", "opposite_count")
+                }
+                for dim, info in state.get("dimensions", {}).items()
+            },
+            "all_converged": state.get("all_converged", False),
+        }
+    except Exception:
+        return None
+
+
 @app.route("/api/ask-batch", methods=["POST"])
 def ask_batch():
     """批量子问题处理 — 使用 ToolAgent"""
@@ -525,7 +550,7 @@ def ask_batch():
 
 @app.route("/api/preference", methods=["POST"])
 def save_preference():
-    """保存用户的偏好数据"""
+    """保存用户的偏好数据（含实验数据持久化）"""
     data = request.json
     preference = data.get("preference", {})
     experiment_mode = data.get("experimentMode", "full")
@@ -536,16 +561,37 @@ def save_preference():
     current_question = data.get("currentQuestion", "")
     persona_state = load_state(project_name)
 
+    # ==== 前端独立计算的 EMA 偏好（与后端 persona_bias 不一定相同）====
+    frontend_ema_bias = data.get("emaBias", None)
+    frontend_confidence = data.get("confidence", None)
+    frontend_decision_time_ms = data.get("decisionTime", None)
+
     # ==== 实验场景追踪字段（场景 A/B/C/D/E 控制）====
     scene_id = data.get("sceneId", "")          # 所属场景
     expected_dim = data.get("expectedDim", "")  # 预期匹配维度（场景E）
     control_side = data.get("controlSide", "")  # 控制策略: fixed_a / fixed_b / random
 
+    # ==== 捕获处理前状态 ====
+    pre_adjustments = eye_processor.get_prompt_adjustments()
+    pre_detail = pre_adjustments.get("detail_score", 0.5)
+    pre_explanation = pre_adjustments.get("explanation_score", 0.5)
+    pre_persona_bias = pre_adjustments.get("persona_bias", 0.5)
+    pre_round_count = pre_adjustments.get("round_count", 0)
+
+    # ==== 捕获 Persona 处理前状态（深拷贝，避免 record_choice 原地修改的影响）===
+    pre_persona_state = copy.deepcopy(persona_state) if persona_state else None
+
+    final_choice = preference.get("finalChoice", None)
+    time_on_a = preference.get("timeOnA", 0)
+    time_on_b = preference.get("timeOnB", 0)
+
+    # ==== 眼动数据处理 ====
     processed_scores = None
+    eye_result = None
     if eye_metrics:
         eye_data_for_process = {
-            "timeOnA": preference.get("timeOnA", 0),
-            "timeOnB": preference.get("timeOnB", 0),
+            "timeOnA": time_on_a,
+            "timeOnB": time_on_b,
             "leftToRight": preference.get("leftToRight", 0),
             "rightToLeft": preference.get("rightToLeft", 0),
             "answerALength": answer_a_length,
@@ -558,25 +604,90 @@ def save_preference():
         if eye_result.get("valid"):
             processed_scores = eye_result.get("current_scores", {})
 
+    # ==== 捕获处理后状态 ====
+    post_adjustments = eye_processor.get_prompt_adjustments()
+
+    # ==== 预计算衍生指标 ====
+    total_time = time_on_a + time_on_b
+    length_ratio = (
+        answer_a_length / max(1, answer_b_length)
+        if answer_b_length > 0 else 1.0
+    )
+    # 归一化注视偏向
+    len_a = max(1, answer_a_length)
+    len_b = max(1, answer_b_length)
+    tpc_a = time_on_a / len_a
+    tpc_b = time_on_b / len_b
+    total_tpc = tpc_a + tpc_b
+    normalized_gaze_bias = round(tpc_a / total_tpc, 4) if total_tpc > 0 else 0.5
+
+    # ==== 构建实验数据记录 ====
     experiment_data = {
+        # 元数据
         "scene_id": scene_id,
         "expected_dim": expected_dim,
         "control_side": control_side,
         "projectName": project_name,
         "experimentMode": experiment_mode,
-        "preference": preference,
+        "currentQuestion": current_question,
+        "timestamp": datetime.now().isoformat(),
+
+        # 用户选择
+        "finalChoice": final_choice,
+        "preference": {
+            "finalChoice": final_choice,
+            "timeOnA": time_on_a,
+            "timeOnB": time_on_b,
+            "leftToRight": preference.get("leftToRight", 0),
+            "rightToLeft": preference.get("rightToLeft", 0),
+        },
+        "decisionTimeMs": frontend_decision_time_ms,
+
+        # 眼动原始指标
         "eyeMetrics": eye_metrics,
+        "hasEyeMetrics": eye_metrics is not None,
         "answerALength": answer_a_length,
         "answerBLength": answer_b_length,
-        "adjustments": eye_processor.get_prompt_adjustments(),
+
+        # 衍生指标（预计算，方便分析脚本）
+        "derived": {
+            "totalTime": total_time,
+            "lengthRatio": round(length_ratio, 4),
+            "normalizedGazeBias": normalized_gaze_bias,
+        },
+
+        # 后端 EMA 模型状态（处理前 vs 处理后）
+        "preUpdate": {
+            "detail_score": pre_detail,
+            "explanation_score": pre_explanation,
+            "persona_bias": pre_persona_bias,
+            "round_count": pre_round_count,
+        },
+        "postUpdate": {
+            "detail_score": post_adjustments.get("detail_score", 0.5),
+            "explanation_score": post_adjustments.get("explanation_score", 0.5),
+            "persona_bias": post_adjustments.get("persona_bias", 0.5),
+            "round_count": post_adjustments.get("round_count", 0),
+        },
+        # 后向兼容：analyze_experiment.py 从这里读 detail_score
+        "adjustments": post_adjustments,
+
+        # 前端独立计算的 EMA 值（对照用）
+        "frontend": {
+            "emaBias": frontend_ema_bias,
+            "confidence": frontend_confidence,
+        },
+
+        # 当前轮实时分数
         "processedScores": processed_scores,
-        "timestamp": datetime.now().isoformat(),
+
+        # Persona 状态快照（处理前，用于收敛分析）
+        "personaState": _snapshot_persona_for_experiment(pre_persona_state),
     }
 
-    # 持久化实验数据到 JSONL 文件（所在目录：backend/experiment_data.jsonl）
-    experiment_file = "experiment_data.jsonl"
+    # 持久化实验数据到 JSONL 文件
     try:
-        with open(experiment_file, "a", encoding="utf-8") as f:
+        with open(EXPERIMENT_DATA_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(experiment_data, ensure_ascii=False) + "\n")
     except Exception as e:
         print(f"保存实验数据失败: {e}")

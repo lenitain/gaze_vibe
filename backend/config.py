@@ -44,6 +44,9 @@ SPLIT_TEMPERATURE = 0.3
 SPLIT_MAX_TOKENS = 2000
 SPLIT_MAX_SUB_QUESTIONS = 4
 
+# ===== 实验数据 =====
+EXPERIMENT_DATA_PATH = "experiment_data.jsonl"  # 相对于运行目录 (backend/)
+
 # ===== 日志 =====
 LOG_DIR = "logs"
 
