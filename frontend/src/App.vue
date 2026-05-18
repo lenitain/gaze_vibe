@@ -357,14 +357,26 @@ async function handleChoice(side) {
 
   let writeResults = { ok: 0, fail: 0 }
   if (blocks) {
+    const writableBlocks = blocks.filter(b => b.filePath)
+    console.log(`[文件写入] 共 ${blocks.length} 个代码块，${writableBlocks.length} 个有路径`, writableBlocks.map(b => b.filePath))
     const results = await Promise.allSettled(
-      blocks.filter(b => b.filePath).map(b =>
+      writableBlocks.map(b =>
         fileIndexer.writeFile(b.filePath, b.code)
       )
     )
     for (const r of results) {
-      r.status === 'fulfilled' ? writeResults.ok++ : writeResults.fail++
+      if (r.status === 'fulfilled') {
+        writeResults.ok++
+      } else {
+        writeResults.fail++
+        console.error(`[文件写入] 失败:`, r.reason)
+      }
     }
+    if (writeResults.ok > 0) {
+      console.log(`[文件写入] 成功 ${writeResults.ok} 个文件`)
+    }
+  } else {
+    console.log('[文件写入] 无代码块')
   }
 
   if (writeResults.fail > 0) {

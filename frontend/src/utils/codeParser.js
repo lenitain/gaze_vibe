@@ -24,6 +24,21 @@ export function extractFilePath(block, text, nearbyFiles) {
   const beforeBlock = text.slice(Math.max(0, block.start - 200), block.start)
   const lines = beforeBlock.split('\n').reverse()
 
+  // 优先匹配显式文件路径注释：// file: path, # file: path, <!-- file: path -->
+  for (const line of lines.slice(0, 3)) {
+    const trimmed = line.trim()
+    for (const prefix of ['// file:', '# file:', '<!-- file:', '/* file:', ';; file:', '-- file:']) {
+      if (trimmed.startsWith(prefix)) {
+        const candidate = trimmed.slice(prefix.length).trim().replace(/`/g, '').replace(/\s+-->$/, '')
+        const matched = nearbyFiles.find(f => f.path === candidate || f.path.endsWith('/' + candidate))
+        if (matched) return matched.path
+        // 路径不存在但用户可能想新建 — 直接返回原始路径
+        return candidate
+      }
+    }
+  }
+
+  // 原有逻辑：匹配 "文件:" "file:" "path:" "修改:" 等关键词
   for (const line of lines.slice(0, 5)) {
     const fileMatch = line.match(/(?:文件|file|path|修改|update|edit)[:\s]*[`"']?([^\s`"']+\.\w+)[`"']?/i)
     if (fileMatch) {
@@ -48,12 +63,21 @@ export function extractFilePath(block, text, nearbyFiles) {
     if (matched) return matched.path
   }
 
-  const firstLine = block.code.split('\n')[0].trim()
-  if (/\.\w{1,5}$/.test(firstLine) && !/[=;({\[]/.test(firstLine)) {
-    const matched = nearbyFiles.find(f =>
-      f.path.endsWith(firstLine) || f.path === firstLine || f.name === firstLine
-    )
-    if (matched) return matched.path
+  // 回退：按语言扩展名匹配项目文件
+  const langExtMap = {
+    javascript: ['js', 'mjs', 'cjs'], typescript: ['ts', 'mts', 'cts'],
+    jsx: ['jsx'], tsx: ['tsx'], python: ['py'], rust: ['rs'],
+    go: ['go'], java: ['java'], kotlin: ['kt'], swift: ['swift'],
+    ruby: ['rb'], php: ['php'], html: ['html', 'htm'], css: ['css'],
+    scss: ['scss'], less: ['less'], json: ['json'], yaml: ['yaml', 'yml'],
+    toml: ['toml'], xml: ['xml'], sql: ['sql'], c: ['c'], cpp: ['cpp', 'cc', 'cxx'],
+    h: ['h'], hpp: ['hpp'], csharp: ['cs'], dart: ['dart'], lua: ['lua'],
+    r: ['r'], scala: ['scala'], vue: ['vue'], svelte: ['svelte'],
+  }
+  const exts = langExtMap[block.lang?.toLowerCase() || '']
+  if (exts) {
+    const match = nearbyFiles.find(f => exts.includes(f.path.split('.').pop().toLowerCase()))
+    if (match) return match.path
   }
 
   return null
