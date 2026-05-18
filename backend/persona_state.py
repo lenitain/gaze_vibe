@@ -252,6 +252,45 @@ def _compute_eye_alpha(base_alpha: float, eye_confidence: float | None, eye_bias
     return max(0.1, min(base_alpha, adjusted))
 
 
+def _describe_eye_modulation(eye_confidence: float | None, eye_bias: float | None, chosen_side: str) -> str:
+    """
+    生成眼动调制的可读描述，展示中间计算过程。
+
+    用于日志显示，让用户看到 conf/bias 如何导向最终的调制因子。
+    """
+    if eye_confidence is None:
+        return "无眼动数据，使用基础 alpha"
+
+    parts = []
+
+    # 置信度因子
+    conf_mod = 0.5 + 0.5 * eye_confidence
+    parts.append(f"conf_mod=0.5+0.5x{eye_confidence:.2f}={conf_mod:.3f}")
+
+    # 中性检测
+    neutral = False
+    penalty = 1.0
+    penalty_desc = "penalty=1.0"
+    if eye_bias is not None:
+        bias_dev = abs(eye_bias - 0.5)
+        if bias_dev <= NEUTRAL_BIAS_THRESHOLD:
+            neutral = True
+            penalty_desc = f"中性(|bias-0.5|={bias_dev:.3f}<={NEUTRAL_BIAS_THRESHOLD}) → penalty=1.0"
+        else:
+            eye_side = "A" if eye_bias > 0.5 else "B"
+            if eye_side != chosen_side:
+                penalty = 0.5
+                penalty_desc = f"矛盾(眼动偏{eye_side}≠选{chosen_side}) → penalty=0.5"
+            else:
+                penalty_desc = f"一致(眼动偏{eye_side}=选{chosen_side}) → penalty=1.0"
+    parts.append(penalty_desc)
+
+    # 最终公式
+    parts.append(f"α_adj = base × {conf_mod:.3f} × {penalty:.1f}")
+
+    return ", ".join(parts)
+
+
 def record_choice(
     state: dict,
     chosen_side: str,
@@ -294,6 +333,13 @@ def record_choice(
         target_dims = list(DIMENSION_PRIORITY)
 
     all_converged = True
+
+    # 打印本轮眼动调制计算过程（全局，所有维度共用）
+    if eye_confidence is not None or eye_bias is not None:
+        mod_desc = _describe_eye_modulation(eye_confidence, eye_bias, chosen_side)
+        print(f"    [调制] {mod_desc}")
+    else:
+        print("    [调制] 无眼动数据，使用各维度基础 alpha")
 
     for dim in DIMENSION_PRIORITY:
         if dim not in chosen_scores or dim not in other_scores:
@@ -378,7 +424,7 @@ def record_choice(
             r = dim_reasonings[dim]
             # 取推理的前50个字
             reason = f"  # {r[:70]}{"..." if len(r) > 70 else ""}"
-        print(f"    [维度] {label} α_base={base_alpha:.2f}→α_adj={alpha:.3f}"
+        print(f"    [维度] {label} α={base_alpha:.2f}→{alpha:.3f}"
               f"  {chosen_scores[dim]:.1f}←({old_other:.1f}→{new_val:.1f})"
               f"  (调{adjustments}轮){reason}", end="")
 
