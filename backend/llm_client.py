@@ -61,33 +61,11 @@ class LLMCallRecord:
 
 
 @dataclass
-@dataclass
-class ToolCallInfo:
-    """单次 tool_call 信息"""
-    id: str
-    name: str
-    arguments: str  # JSON string
-
-
-@dataclass
 class LLMResponse:
-    """LLM 调用响应
-
-    text: 响应文本（无 tool_call 时 = content，有 tool_call 时 = 空）
-    usage: token 用量
-    model: 模型名
-    latency_ms: 延迟
-    tool_calls: 可选，function calling 请求列表
-    """
     text: str
     usage: TokenUsage
     model: str
     latency_ms: float
-    tool_calls: list[ToolCallInfo] | None = None
-
-    @property
-    def has_tool_calls(self) -> bool:
-        return bool(self.tool_calls)
 
 
 # ===== 配置 =====
@@ -430,19 +408,17 @@ class LLMClient:
         elapsed = (time.time() - start_time) * 1000
 
         choice = response.choices[0]
-        msg = choice.message
-        text = msg.content or ""
+        text = choice.message.content or ""
 
-        # 提取 tool_calls (用于 Agent Loop)
-        tool_calls: list[ToolCallInfo] | None = None
-        if msg.tool_calls:
-            tool_calls = []
-            for tc in msg.tool_calls:
-                tool_calls.append(ToolCallInfo(
-                    id=tc.id,
-                    name=tc.function.name,
-                    arguments=tc.function.arguments,
-                ))
+        # 处理 tool_calls (结构化输出)
+        if choice.message.tool_calls:
+            for tc in choice.message.tool_calls:
+                if tc.function.name:
+                    try:
+                        parsed = json.loads(tc.function.arguments)
+                        text = parsed.get("result", "") or json.dumps(parsed, ensure_ascii=False)
+                    except json.JSONDecodeError:
+                        text = tc.function.arguments
 
         usage = TokenUsage(
             input_tokens=response.usage.prompt_tokens if response.usage else 0,
@@ -455,20 +431,14 @@ class LLMClient:
             model=model,
             system_prompt_preview=system_prompt[:100],
             user_prompt_preview=user_prompt[:100],
-            response_preview=text[:200] or str(tool_calls[:1]) if tool_calls else "",
+            response_preview=text[:200],
             latency_ms=round(elapsed, 1),
             usage=usage,
             success=True,
         )
         self._emit_record(record)
 
-        return LLMResponse(
-            text=text,
-            usage=usage,
-            model=model,
-            latency_ms=round(elapsed, 1),
-            tool_calls=tool_calls,
-        )
+        return LLMResponse(text=text, usage=usage, model=model, latency_ms=round(elapsed, 1))
 
     def _call_stream(
         self,

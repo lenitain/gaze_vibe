@@ -440,7 +440,6 @@ function handleRegionSwitch({ from, to }) {
     <FolderSelector
       v-if="showFolderSelector"
       @select="handleFolderSelect"
-      @set-project-root="(root) => console.log('projectRoot set:', root)"
     />
 
     <header class="header">

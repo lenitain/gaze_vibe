@@ -8,9 +8,6 @@
 修改任一侧后，必须同步更新另一侧。
 """
 
-import os
-
-
 # ===== 眼动数据处理 (eye_tracker_processor.py) =====
 
 # 与前端 config.js ALPHA 同步
@@ -32,12 +29,6 @@ LLM_TIMEOUT = 120  # 秒
 # ===== Embedding (vector_utils.py) =====
 # DeepSeek embedding 模型（若不可用则自动跳过，不影响核心功能）
 EMBEDDING_MODEL = "deepseek-embedding"
-
-# ===== 项目根目录（可选，用于 AgentLoop 文件工具）=====
-# 浏览器 File System Access API 不暴露完整路径，
-# 设置此值可使后端在已知项目中直接读写文件。
-# 设为空字符串 "" 则仅生成文本答案。
-PROJECT_ROOT = os.getenv("PROJECT_ROOT", "")
 
 # ===== Agent Loop (agent_loop.py) =====
 AGENT_MAX_TURNS = 6
