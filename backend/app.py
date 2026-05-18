@@ -35,6 +35,8 @@ from config import (
 )
 from errors import APIError, register_error_handlers
 from eye_tracker_processor import EyeTrackerProcessor, print_thoughts
+from file_writer import write_file_blocks, maybe_delete_file
+from result import ok, err, unwrap
 
 # === 新架构模块 ===
 from llm_client import LLMClient, LLMError
@@ -211,19 +213,35 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_sta
         from tool import default_tools
         tools = default_tools(project_root)
         agent = AgentLoop(llm_client, tools)
-        tool_hint = (
-            "\n\n[工具说明]\n"
-            "你可以使用以下工具操作项目文件：\n"
-            "- read_file: 读取项目文件\n"
+
+        # 文件写入指令（不依赖 LLM 调用 function calling，
+        # 后端会从回答中提取 file: 标注的代码块自动写入）
+        file_hint = (
+            "\n\n[文件生成要求]\n"
+            "如果生成新文件或修改已有文件，请在代码块第一行标注文件路径：\n"
+            "```lang\n"
+            "// file: path/to/file.ext\n"
+            "<代码内容>\n"
+            "```\n"
+            "\n"
+            "例如：\n"
+            "```rust\n"
+            "// file: src/main.rs\n"
+            "fn main() { println!(\"hello\"); }\n"
+            "```\n"
+            "\n"
+            "后端会自动根据标注将代码写入对应文件。\n"
+            "如果不需要生成文件，忽略此要求即可。\n"
+            "你还可以调用以下工具操作已有文件：\n"
+            "- read_file: 读取已有项目文件\n"
             "- write_file: 创建/更新文件\n"
             "- search_code: 在项目中搜索代码\n"
             "- list_files: 列出项目目录结构\n"
             "- create_directory: 创建目录\n"
-            "请根据需要调用工具完成任务，最后给出清晰的文字总结。"
         )
-        prompt_a_with_tools = prompt_a + tool_hint
-        prompt_b_with_tools = prompt_b + tool_hint
-        print(f"\n  启用 AgentLoop (project_root={project_root})")
+        prompt_a_with_tools = prompt_a + file_hint
+        prompt_b_with_tools = prompt_b + file_hint
+        print(f"\n  启用 AgentLoop + 自动写文件 (project_root={project_root})")
     else:
         prompt_a_with_tools = prompt_a
         prompt_b_with_tools = prompt_b
@@ -271,11 +289,23 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_sta
             answer_b = response_b.text
             print(f"    ✓ 简洁解答生成完成 ({len(answer_b)} 字符, {response_b.usage.total_tokens} tokens)")
 
+        # 从回答中提取代码块并写入文件（只要设置有 project_root）
+        written_files = []
+        if project_root and project_root.strip():
+            # 从详细答案提取
+            written_files.extend(write_file_blocks(answer_a, project_root))
+            # 从简洁答案提取
+            written_files.extend(write_file_blocks(answer_b, project_root))
+            if written_files:
+                unique = list(dict.fromkeys(written_files))  # 去重保序
+                print(f"  [写文件] ✓ 共写入 {len(unique)} 个文件: {', '.join(unique)}")
+
         result = {
             "answerA": answer_a,
             "answerB": answer_b,
             "success": True,
             "adjustments": adjustments,
+            "written_files": list(dict.fromkeys(written_files)),
         }
 
         if use_agent:
