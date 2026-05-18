@@ -44,27 +44,27 @@ DIMENSION_ALPHA: dict[str, float] = {
 # 实际由两者分数关系决定，不硬编码
 
 
-# ===== 内存状态管理（无持久化，进程重启即清空） =====
+# ===== 基于 Storage 抽象的状态管理 =====
 
-# 项目状态内存缓存（project_name → state dict）
-_in_memory_states: dict[str, dict] = {}
+from storage import MemoryStorage, Storage
+
+# 全局 Persona 存储（按项目名隔离）
+persona_storage: Storage[dict] = MemoryStorage[dict]()
 
 
 def load_state(project_name: str = "default") -> dict:
-    """获取项目状态（内存中维护，不存在则创建初始状态）"""
-    if project_name not in _in_memory_states:
-        _in_memory_states[project_name] = _initial_state()
-    return _in_memory_states[project_name]
+    """获取项目状态（不存在则创建初始状态）"""
+    return persona_storage.get_or_create(project_name, _initial_state)
 
 
 def save_state(project_name: str, state: dict):
-    """保存项目状态到内存"""
-    _in_memory_states[project_name] = state
+    """保存项目状态"""
+    persona_storage.set(project_name, state)
 
 
 def reset_state(project_name: str):
-    """重置项目状态（从内存中移除）"""
-    _in_memory_states.pop(project_name, None)
+    """重置项目状态"""
+    persona_storage.delete(project_name)
 
 
 # ===== 数据变换 =====

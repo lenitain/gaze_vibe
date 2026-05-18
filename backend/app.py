@@ -52,6 +52,7 @@ from persona_state import (
     reset_state,
     save_state,
 )
+from storage import MemoryStorage
 from prompt_builder import build_dual_answer_prompts
 from prompts import load_prompt
 from sse_events import (
@@ -86,8 +87,12 @@ llm_logger = LLMLogger(log_dir=LOG_DIR)
 # 注册回调：每次 LLM 调用自动记录
 llm_client.on_record = lambda record: llm_logger.record_from_llm_record(record, caller="generate_dual_answers")
 
-# 全局眼动数据处理器
-eye_processor = EyeTrackerProcessor()
+# 全局存储后端（纯内存，进程退出即清空）
+eye_storage = MemoryStorage[dict]()
+memory_storage = MemoryStorage[list]()
+
+# 全局眼动数据处理器（带 Storage 持久化）
+eye_processor = EyeTrackerProcessor(storage=eye_storage, storage_key="default")
 
 # 记忆系统
 init_embedding_client(llm_client._client)
@@ -95,9 +100,9 @@ _memory_stores: dict[str, "MemoryStore"] = {}
 
 
 def _get_memory(project_name: str) -> "MemoryStore":
-    """获取项目的 MemoryStore，按需创建"""
+    """获取项目的 MemoryStore，按需创建（使用全局 memory_storage）"""
     if project_name not in _memory_stores:
-        _memory_stores[project_name] = MemoryStore(project_name)
+        _memory_stores[project_name] = MemoryStore(project_name, storage=memory_storage)
     return _memory_stores[project_name]
 
 
@@ -694,7 +699,8 @@ def reset_eye_model():
     data = request.get_json(silent=True) or {}
     project_name = data.get("projectName", "default")
 
-    eye_processor = EyeTrackerProcessor()
+    eye_storage.clear()
+    eye_processor = EyeTrackerProcessor(storage=eye_storage, storage_key="default")
     reset_state(project_name)
     if project_name in _memory_stores:
         _memory_stores[project_name].clear()

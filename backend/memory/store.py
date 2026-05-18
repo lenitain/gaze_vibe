@@ -1,13 +1,15 @@
 """
 记忆存储
 
-纯内存实现，无持久化。进程重启即清空。
+纯内存实现，可选 Storage 后端持久化。
 支持增/删/查/向量检索。
 """
 
+from datetime import datetime
 import uuid
 
 from memory.types import MemoryItem, MemoryType
+from storage import Storage
 from vector_utils import cosine_similarity, embed_text
 
 
@@ -15,16 +17,41 @@ class MemoryStore:
     """
     记忆存储
 
-    全部条目在内存中维护，不写入磁盘。
+    全部条目在内存中维护。若提供 storage，每次变更后自动持久化。
     embedding 向量按需从 deepseek 计算。
     """
 
-    def __init__(self, project_name: str = "default"):
+    KEY_ITEMS = "items"
+
+    def __init__(self, project_name: str = "default", storage: Storage[list[MemoryItem]] | None = None):
         self.project_name = project_name
+        self._storage = storage
         self.items: list[MemoryItem] = []
         self._embeddings: list[list[float]] = []
+        if self._storage is not None:
+            self._load()
 
     # ===== 写 =====
+
+    def _load(self):
+        """从 Storage 加载条目"""
+        if self._storage is None:
+            return
+        loaded = self._storage.get(self.project_name)
+        if loaded is not None:
+            self.items = loaded
+            self._rebuild_embeddings()
+
+    def _save(self):
+        """持久化到 Storage"""
+        if self._storage is not None:
+            self._storage.set(self.project_name, self.items)
+
+    def _rebuild_embeddings(self):
+        """从 items 重建 _embeddings 索引"""
+        self._embeddings = [
+            item.embedding or [] for item in self.items
+        ]
 
     def add(self, item: MemoryItem) -> str:
         """添加一条记忆，返回 ID"""
@@ -43,6 +70,7 @@ class MemoryStore:
 
         self.items.append(item)
         self._embeddings.append(item.embedding or [])
+        self._save()
 
         return item.id
 
@@ -87,6 +115,7 @@ class MemoryStore:
         for item in self.items:
             if item.id == item_id:
                 item.invalid_at = datetime.now().isoformat()
+                self._save()
                 break
 
     # ===== 读 =====
@@ -172,6 +201,7 @@ class MemoryStore:
         return len(self.get_all(type_filter))
 
     def clear(self):
-        """清空所有记忆（内存中）"""
+        """清空所有记忆"""
         self.items = []
         self._embeddings = []
+        self._save()

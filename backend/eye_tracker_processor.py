@@ -11,6 +11,7 @@
 from datetime import datetime
 
 from config import ALPHA, INITIAL_DETAIL, INITIAL_EXPLANATION, INITIAL_PERSONA_BIAS, MIN_EYE_TIME
+from storage import Storage
 
 
 class EyeTrackerProcessor:
@@ -20,11 +21,21 @@ class EyeTrackerProcessor:
     实现：
     1. 实时调整：基于当前轮次眼动数据计算调整分数
     2. 长期建模：使用 EMA 平滑用户偏好
+    3. 可选 Storage 持久化
     """
 
     # 常亮来自 config.py: ALPHA, INITIAL_DETAIL, INITIAL_EXPLANATION, MIN_EYE_TIME
 
-    def __init__(self):
+    def __init__(self, storage: Storage[dict] | None = None, storage_key: str = "default"):
+        self._storage = storage
+        self._storage_key = storage_key
+
+        if self._storage is not None:
+            stored = self._storage.get(storage_key)
+            if stored is not None:
+                self._from_dict(stored)
+                return
+
         # 长期模型
         self.long_term_detail = INITIAL_DETAIL
         self.long_term_explanation = INITIAL_EXPLANATION
@@ -33,6 +44,11 @@ class EyeTrackerProcessor:
         self.round_count = 0
         # 历史记录
         self.history = []
+
+    def _save_state(self):
+        """持久化当前状态到 Storage"""
+        if self._storage is not None:
+            self._storage.set(self._storage_key, self.to_dict())
 
     def process(self, eye_data: dict) -> dict:
         """
@@ -114,6 +130,7 @@ class EyeTrackerProcessor:
             "final_scores": final_scores,
         }
         self.history.append(record)
+        self._save_state()
 
         return {
             "valid": True,
@@ -451,6 +468,18 @@ class EyeTrackerProcessor:
             "persona_bias": self.long_term_persona_bias,
             "round_count": self.round_count,
         }
+
+    def _from_dict(self, data: dict):
+        """从字典恢复状态（实例方法，无 storage 副作用）"""
+        self.long_term_detail = data.get("long_term_detail", INITIAL_DETAIL)
+        self.long_term_explanation = data.get(
+            "long_term_explanation", INITIAL_EXPLANATION
+        )
+        self.long_term_persona_bias = data.get(
+            "long_term_persona_bias", INITIAL_PERSONA_BIAS
+        )
+        self.round_count = data.get("round_count", 0)
+        self.history = data.get("history", [])
 
     def to_dict(self) -> dict:
         """导出状态 (用于持久化)"""
