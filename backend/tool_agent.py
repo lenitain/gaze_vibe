@@ -172,6 +172,90 @@ def make_search_code_tool(project_root: str) -> Tool:
     )
 
 
+def make_create_directory_tool(project_root: str) -> Tool:
+    """创建 create_directory tool"""
+    def handler(dir_path: str) -> str:
+        target = _resolve_project_path(project_root, dir_path)
+        if target.exists():
+            return f"目录已存在: {dir_path}"
+        target.mkdir(parents=True, exist_ok=True)
+        return f"✓ 已创建目录: {dir_path}"
+
+    return Tool(
+        name="create_directory",
+        description="在项目中创建新目录。当需要新建模块、组件目录时调用。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "dir_path": {
+                    "type": "string",
+                    "description": "相对于项目根目录的目录路径，如 src/utils",
+                }
+            },
+            "required": ["dir_path"],
+        },
+        handler=handler,
+    )
+
+
+def make_delete_file_tool(project_root: str) -> Tool:
+    """创建 delete_file tool"""
+    def handler(file_path: str) -> str:
+        target = _resolve_project_path(project_root, file_path)
+        if not target.exists():
+            return f"文件不存在: {file_path}"
+        if not target.is_file():
+            return f"不是文件: {file_path}"
+        size = target.stat().st_size
+        target.unlink()
+        return f"✓ 已删除文件: {file_path} ({size} 字节)"
+
+    return Tool(
+        name="delete_file",
+        description="删除项目中的文件。当需要移除不再需要的代码文件时调用。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "相对于项目根目录的文件路径",
+                }
+            },
+            "required": ["file_path"],
+        },
+        handler=handler,
+    )
+
+
+def make_delete_directory_tool(project_root: str) -> Tool:
+    """创建 delete_directory tool（递归删除）"""
+    def handler(dir_path: str) -> str:
+        import shutil
+        target = _resolve_project_path(project_root, dir_path)
+        if not target.exists():
+            return f"目录不存在: {dir_path}"
+        if not target.is_dir():
+            return f"不是目录: {dir_path}"
+        shutil.rmtree(target)
+        return f"✓ 已删除目录: {dir_path}"
+
+    return Tool(
+        name="delete_directory",
+        description="递归删除项目中的目录及其所有内容。当需要移除整个模块或替换项目结构时调用。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "dir_path": {
+                    "type": "string",
+                    "description": "相对于项目根目录的目录路径",
+                }
+            },
+            "required": ["dir_path"],
+        },
+        handler=handler,
+    )
+
+
 def make_list_files_tool(project_root: str) -> Tool:
     """创建 list_files tool"""
     IGNORE_DIRS = {"node_modules", ".git", "dist", "build", "__pycache__", ".venv", "venv", ".idea", ".vscode"}
@@ -259,6 +343,9 @@ class ToolAgent:
         self.tools: list[Tool] = [
             make_read_file_tool(project_root),
             make_write_file_tool(project_root),
+            make_create_directory_tool(project_root),
+            make_delete_file_tool(project_root),
+            make_delete_directory_tool(project_root),
             make_search_code_tool(project_root),
             make_list_files_tool(project_root),
         ]

@@ -111,7 +111,21 @@ def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_sta
     - SSEEvents 推送眼动状态
     """
     print("\n" + "─" * 60)
-    print(f"  收到用户问题: {prompt[:50]}...")
+    # 完整显示用户问题，不截断
+    # 如果 prompt 包含记忆上下文（以 "##" 开头），分开显示
+    lines = prompt.split("\n")
+    question_part = [l for l in lines if l.startswith("原始问题:") or l.startswith("当前子任务:")]
+    if question_part:
+        print(f"  用户问题: {question_part[-1]}")
+        # 显示记忆上下文摘要（不截断内容本身）
+        memory_lines = [l for l in lines if l.startswith("##") or l.startswith("- ")]
+        if memory_lines:
+            for ml in memory_lines[:6]:
+                print(f"  {ml}")
+            if len(memory_lines) > 6:
+                print(f"  ... 共 {len(memory_lines)} 条记忆")
+    else:
+        print(f"  用户问题: {prompt}")
     print("─" * 60)
 
     # 1. 处理眼动数据
