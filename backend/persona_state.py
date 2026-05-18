@@ -298,24 +298,28 @@ def record_choice(
 
         # ---- 已收敛维度：检测反转信号 ----
         if converged:
+            label = DIMS_LABEL.get(dim, dim)
             if dim in target_dims and preferred_side and chosen_side != preferred_side:
-                # 用户选了和收敛方向相反的一侧 → 积累计数
-                dim_info["opposite_count"] = dim_info.get("opposite_count", 0) + 1
-                if dim_info["opposite_count"] >= UNCONVERGE_THRESHOLD:
+                oc = dim_info.get("opposite_count", 0) + 1
+                dim_info["opposite_count"] = oc
+                if oc >= UNCONVERGE_THRESHOLD:
+                    print(f"    [维度] {label} ⚠ 反转累计{oc}/{UNCONVERGE_THRESHOLD} → 解除收敛")
                     _unconverge_dim(persona_a, persona_b, dim, chosen_side, dim_info)
-                    # 解除收敛后本轮的调整逻辑在后面继续执行
                     converged = False
                     dim_info["converged"] = False
                     dim_info["opposite_count"] = 0
                     dim_info["preferred_side"] = None
                 else:
                     dims[dim] = dim_info
+                    print(f"    [维度] {label} ✓ 已收敛(偏{preferred_side}), 反转累计 {oc}/{UNCONVERGE_THRESHOLD}")
                 continue
             elif dim in target_dims and preferred_side and chosen_side == preferred_side:
-                # 选了一致的一侧 → 重置反侧计数
                 dim_info["opposite_count"] = 0
                 dims[dim] = dim_info
-            continue  # 已收敛且无反转信号
+                print(f"    [维度] {label} ✓ 已收敛(偏{preferred_side}), 选择一致 → 重置")
+            else:
+                print(f"    [维度] {label} ✓ 已收敛(不相关维度, 跳过)")
+            continue
 
         # ---- 不在 target_dims 中的维度不动 ----
         if dim not in target_dims:
@@ -326,6 +330,7 @@ def record_choice(
         # ---- 未收敛维度：调整逻辑 ----
         base_alpha = DIMENSION_ALPHA.get(dim, 0.3)
         alpha = _compute_eye_alpha(base_alpha, eye_confidence, eye_bias, chosen_side)
+        label = DIMS_LABEL.get(dim, dim)
 
         if gap < MIN_DIFF_TO_ADJUST:
             # 差距很小，标记为收敛
@@ -337,13 +342,19 @@ def record_choice(
             dim_info["opposite_count"] = 0
             dim_info["adjustments"] = dim_info.get("adjustments", 0) + 1
             dims[dim] = dim_info
+            print(f"    [维度] {label} → 收敛(A/B={avg}) (差距{gap:.2f}<{MIN_DIFF_TO_ADJUST}, 直接合并)")
             continue
 
         # 有显著差距 → EMA 调整
         new_val = alpha * c_val + (1 - alpha) * o_val
         new_val = round(max(1.0, min(5.0, new_val)), 2)
+        old_other = o_val
         other_scores[dim] = new_val
         dim_info["adjustments"] = dim_info.get("adjustments", 0) + 1
+
+        print(f"    [维度] {label} α_base={base_alpha:.2f}→α_adj={alpha:.3f}"
+              f"  {chosen_scores[dim]:.1f}←({old_other:.1f}→{new_val:.1f})"
+              f"  (调{adjustments}轮)", end="")
 
         # 调整后检测是否收敛
         new_gap = abs(chosen_scores[dim] - other_scores[dim])
@@ -354,6 +365,9 @@ def record_choice(
             dim_info["converged"] = True
             dim_info["preferred_side"] = chosen_side
             dim_info["opposite_count"] = 0
+            print(f" → 收敛(A/B={avg})")
+        else:
+            print(f"  gap={new_gap:.2f}")
 
         dims[dim] = dim_info
 
@@ -373,6 +387,20 @@ def record_choice(
         _explore_random(other_scores)
 
     return state
+
+
+DIMS_LABEL = {
+    "ecosystem_maturity": "生态成熟度",
+    "correctness_strategy": "正确性策略",
+    "naming_style": "命名风格",
+    "documentation_depth": "文档深度",
+    "error_handling": "错误处理",
+    "edge_case_coverage": "边界覆盖",
+    "dependency_philosophy": "依赖哲学",
+    "abstraction_timing": "抽象时机",
+    "testing_strategy": "测试策略",
+    "performance_priority": "性能优先级",
+}
 
 
 def _unconverge_dim(

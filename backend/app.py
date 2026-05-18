@@ -544,43 +544,59 @@ def save_preference():
         # 判断问题涉及哪些维度
         # 先用 LLM 分类，失败回退到关键词
         relevant_dims = None
+        dim_classify_source = "全部未收敛"
         if current_question:
             relevant_dims = classify_dimensions_llm(current_question)
             if relevant_dims is not None:
+                dim_classify_source = "LLM"
                 print(f"    LLM 维度分类: {relevant_dims}")
             else:
+                print(f"    LLM 维度分类失败(返回None)，尝试关键词回退...")
                 relevant_dims = classify_dimensions(current_question)
                 if relevant_dims:
+                    dim_classify_source = "关键词"
                     print(f"    关键词维度分类: {relevant_dims}")
                 else:
-                    print("    无法判断问题维度，全部未收敛维度参与调整")
+                    print(f"    关键词匹配无结果，全部未收敛维度参与调整")
 
         updated_state = record_choice(
             persona_state, final_choice, relevant_dims,
             eye_confidence=eye_confidence,
             eye_bias=eye_bias,
         )
+        from persona_state import DIMS_LABEL, NEUTRAL_BIAS_THRESHOLD
+
+        # 眼动调制摘要
         if eye_confidence is not None:
-            from persona_state import NEUTRAL_BIAS_THRESHOLD
             bias_val = eye_bias or 0.5
+            rc = adjustments.get("round_count", 0)
             if abs(bias_val - 0.5) > NEUTRAL_BIAS_THRESHOLD:
                 eye_side = "A" if bias_val > 0.5 else "B"
                 consistent = "一致" if eye_side == final_choice else "矛盾"
                 mode = f"偏{eye_side}, {consistent}"
             else:
                 mode = "中性"
-            print(f"    眼动调制: conf={eye_confidence:.2f}, bias={bias_val:.2f} ({mode})")
+            print(f"    眼动调制: conf={eye_confidence:.2f}, bias={bias_val:.2f}, round={rc} ({mode})")
         else:
             print("    眼动调制: 无眼动数据，使用基础调整速度")
         save_state(project_name, updated_state)
         log_state_change(updated_state, project_name)
+
+        # 收敛状态摘要
+        all_dims = updated_state.get("dimensions", {})
+        converged_dims = [dim for dim, info in all_dims.items() if info.get("converged")]
+        unconverged_dims = [dim for dim in all_dims if not all_dims[dim].get("converged")]
+        total = len(all_dims)
         persona_gap = get_persona_bias(updated_state)
-        converged_dims = [
-            dim for dim, info in updated_state.get('dimensions', {}).items()
-            if info.get('converged')
-        ]
+
+        if converged_dims:
+            names = ", ".join(DIMS_LABEL.get(d, d) for d in converged_dims)
+            print(f"    已收敛({len(converged_dims)}/{total}): {names}")
+        if unconverged_dims:
+            names = ", ".join(DIMS_LABEL.get(d, d) for d in unconverged_dims)
+            print(f"    学习中({len(unconverged_dims)}/{total}): {names}")
+        print(f"    Persona 偏差: {persona_gap:.4f} (分类来源: {dim_classify_source})")
         all_done = updated_state.get('all_converged', False)
-        print(f"    Persona 偏差: {persona_gap:.4f} (收敛维度: {len(converged_dims)}/{len(updated_state.get('dimensions', {}))})")
         if all_done:
             print("    所有维度已收敛，未选中侧进入随机探索模式")
 
