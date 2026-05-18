@@ -545,13 +545,7 @@ def save_preference():
         "timestamp": datetime.now().isoformat(),
     }
 
-    experiment_file = "experiment_data.jsonl"
-    try:
-        with open(experiment_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(experiment_data, ensure_ascii=False) + "\n")
-    except Exception as e:
-        print(f"保存实验数据失败: {e}")
-
+    # 实验数据仅在内存中用于日志展示，不持久化
     print("\n" + "─" * 60)
     print("  用户偏好数据")
     print("─" * 60)

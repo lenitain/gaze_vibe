@@ -1,40 +1,28 @@
 """
 记忆存储
 
-内存 numpy 矩阵 + JSONL 持久化，轻量无外部依赖。
+纯内存实现，无持久化。进程重启即清空。
 支持增/删/查/向量检索。
 """
 
-import json
 import uuid
-from datetime import datetime
-from pathlib import Path
 
-from config import MEMORY_DATA_DIR
 from memory.types import MemoryItem, MemoryType
 from vector_utils import cosine_similarity, embed_text
-
-DATA_DIR = Path(__file__).parent.parent / MEMORY_DATA_DIR
 
 
 class MemoryStore:
     """
     记忆存储
 
-    全部条目在内存中维护，同步持久化到 JSONL。
-    embedding 向量存在 numpy 矩阵中，按需从 deepseek 计算。
+    全部条目在内存中维护，不写入磁盘。
+    embedding 向量按需从 deepseek 计算。
     """
 
     def __init__(self, project_name: str = "default"):
         self.project_name = project_name
-        safe = project_name.replace("/", "_").replace("\\", "_")
-        self.data_dir = DATA_DIR / safe
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-
         self.items: list[MemoryItem] = []
         self._embeddings: list[list[float]] = []
-
-        self._load()
 
     # ===== 写 =====
 
@@ -56,7 +44,6 @@ class MemoryStore:
         self.items.append(item)
         self._embeddings.append(item.embedding or [])
 
-        self._append_item(item)
         return item.id
 
     def add_episodic(
@@ -184,69 +171,7 @@ class MemoryStore:
     def count(self, type_filter: MemoryType | None = None) -> int:
         return len(self.get_all(type_filter))
 
-    # ===== 持久化 =====
-
-    def _append_item(self, item: MemoryItem):
-        """追加一条记录到 JSONL"""
-        path = self.data_dir / "items.jsonl"
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(self._item_to_dict(item), ensure_ascii=False) + "\n")
-
-    def _load(self):
-        """从 JSONL 恢复"""
-        path = self.data_dir / "items.jsonl"
-        if not path.exists():
-            return
-
-        self.items = []
-        self._embeddings = []
-
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    item = self._dict_to_item(data)
-                    self.items.append(item)
-                    self._embeddings.append(item.embedding or [])
-                except Exception as e:
-                    print(f"  [Memory] 加载条目失败: {e}")
-
     def clear(self):
-        """清空所有记忆"""
+        """清空所有记忆（内存中）"""
         self.items = []
         self._embeddings = []
-        for f in self.data_dir.glob("*"):
-            f.unlink()
-
-    @staticmethod
-    def _item_to_dict(item: MemoryItem) -> dict:
-        return {
-            "id": item.id,
-            "type": item.type,
-            "content": item.content,
-            "source_query": item.source_query,
-            "persona": item.persona,
-            "created_at": item.created_at,
-            "invalid_at": item.invalid_at,
-            "confidence": item.confidence,
-            "embedding": item.embedding,
-            "metadata": item.metadata,
-        }
-
-    @staticmethod
-    def _dict_to_item(data: dict) -> MemoryItem:
-        return MemoryItem(
-            id=data["id"],
-            type=data["type"],
-            content=data["content"],
-            source_query=data.get("source_query", ""),
-            persona=data.get("persona"),
-            created_at=data.get("created_at", ""),
-            invalid_at=data.get("invalid_at"),
-            confidence=data.get("confidence", 1.0),
-            embedding=data.get("embedding"),
-            metadata=data.get("metadata", {}),
-        )

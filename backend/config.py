@@ -48,5 +48,3 @@ LOG_DIR = "logs"
 
 # ===== RAG 记忆系统 =====
 MEMORY_TOP_K = 5  # 检索返回的记忆条数
-MEMORY_ENABLE_EXTRACT = True  # 是否启用语义记忆提取
-MEMORY_DATA_DIR = "memory_data"  # 记忆持久化目录

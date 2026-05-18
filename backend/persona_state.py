@@ -8,17 +8,12 @@ Persona 多维动态调整 + 维度级收敛（按项目名隔离）
 - 各维度调整速度独立配置
 - 所有维度收敛后进入随机探索模式
 
-状态文件存储在 backend/persona_states/{project_name}.json
+状态存储在内存中（按项目名隔离），进程退出即清空。
 """
 
-import json
 import random
-from datetime import datetime
-from pathlib import Path
 
 from persona_loader import DIMENSION_DESCRIPTIONS, DIMENSION_PRIORITY, PersonaLoader
-
-_STATES_DIR = Path(__file__).parent / "persona_states"
 
 CONVERGE_THRESHOLD = 0.5          # 维度 A/B 差距低于此值视为收敛
 MIN_DIFF_TO_ADJUST = 0.3          # A/B 差距小于此值不调整（已接近）
@@ -49,43 +44,27 @@ DIMENSION_ALPHA: dict[str, float] = {
 # 实际由两者分数关系决定，不硬编码
 
 
-# ===== 持久化 =====
+# ===== 内存状态管理（无持久化，进程重启即清空） =====
 
-def _state_path(project_name: str) -> Path:
-    safe = project_name.replace("/", "_").replace("\\", "_")
-    _STATES_DIR.mkdir(parents=True, exist_ok=True)
-    return _STATES_DIR / f"{safe}.json"
-
-
-def _log_path(project_name: str) -> Path:
-    """状态变更日志路径（JSONL 格式）"""
-    safe = project_name.replace("/", "_").replace("\\", "_")
-    _STATES_DIR.mkdir(parents=True, exist_ok=True)
-    return _STATES_DIR / f"{safe}.log.jsonl"
+# 项目状态内存缓存（project_name → state dict）
+_in_memory_states: dict[str, dict] = {}
 
 
 def load_state(project_name: str = "default") -> dict:
-    """加载项目状态，不存在则返回初始状态"""
-    path = _state_path(project_name)
-    if path.exists():
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return _initial_state()
+    """获取项目状态（内存中维护，不存在则创建初始状态）"""
+    if project_name not in _in_memory_states:
+        _in_memory_states[project_name] = _initial_state()
+    return _in_memory_states[project_name]
 
 
 def save_state(project_name: str, state: dict):
-    """持久化状态"""
-    path = _state_path(project_name)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    """保存项目状态到内存"""
+    _in_memory_states[project_name] = state
 
 
 def reset_state(project_name: str):
-    """删除项目状态"""
-    path = _state_path(project_name)
-    if path.exists():
-        path.unlink()
+    """重置项目状态（从内存中移除）"""
+    _in_memory_states.pop(project_name, None)
 
 
 # ===== 数据变换 =====
@@ -551,34 +530,17 @@ def get_prompt_scores(state: dict, side: str) -> dict:
 
 def log_state_change(state: dict, project_name: str):
     """
-    记录一次状态变更到 {project_name}.log.jsonl 文件。
+    记录状态变更（打印到终端）。
 
-    由 app.py 在 save_state 后调用，确保 project_name 可用。
+    由 app.py 在 save_state 后调用。
     """
-    if "dimensions" not in state:
+    if "dimensions" not in state or "persona_a" not in state:
         return
 
     dims = state["dimensions"]
-    record = {
-        "timestamp": datetime.now().isoformat(),
-        "all_converged": state.get("all_converged", False),
-        "persona_bias": state.get("persona_bias", 0.0),
-        "dimensions": {
-            dim: {
-                "converged": info.get("converged", False),
-                "adjustments": info.get("adjustments", 0),
-                "preferred_side": info.get("preferred_side"),
-                "opposite_count": info.get("opposite_count", 0),
-            }
-            for dim, info in dims.items()
-        },
-        "persona_a_scores": dict(state.get("persona_a", {}).get("scores", {})),
-        "persona_b_scores": dict(state.get("persona_b", {}).get("scores", {})),
-    }
-
-    path = _log_path(project_name)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    converged = [d for d, info in dims.items() if info.get("converged")]
+    print(f"    [状态] {project_name}: {len(converged)}/{len(dims)} 维度收敛, "
+          f"偏差={state.get('all_converged', False)}")
 
 
 def _explore_random(scores: dict):
