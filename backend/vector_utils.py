@@ -23,6 +23,10 @@ def embed_text(text: str) -> list[float]:
     if _embed_client is None:
         raise RuntimeError("embedding client 未初始化，请先调用 init_embedding_client()")
 
+    # DeepSeek 可能不支持 embedding API，调用失败时请检查:
+    # 1. EMBEDDING_MODEL 是否对应当前 API 的模型名
+    # 2. 当前 API 端点是否提供 embedding 服务
+    # 不影响核心问答功能，记忆系统会跳过 embedding 降级为纯文本检索
     response = _embed_client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=text,

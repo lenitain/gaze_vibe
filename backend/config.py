@@ -27,7 +27,8 @@ LLM_MAX_RETRIES = 2
 LLM_TIMEOUT = 120  # 秒
 
 # ===== Embedding (vector_utils.py) =====
-EMBEDDING_MODEL = "text-embedding-ada-002"
+# DeepSeek embedding 模型（若不可用则自动跳过，不影响核心功能）
+EMBEDDING_MODEL = "deepseek-embedding"
 
 # ===== Agent Loop (agent_loop.py) =====
 AGENT_MAX_TURNS = 6

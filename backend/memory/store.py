@@ -65,7 +65,7 @@ class MemoryStore:
             try:
                 item.embedding = embed_text(item.content)
             except Exception as e:
-                print(f"  [Memory] embedding 失败: {e}")
+                print(f"  [Memory] embedding 失败: {e}（跳过 embedding，记忆仍正常保存）")
                 item.embedding = []
 
         self.items.append(item)
