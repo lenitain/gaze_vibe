@@ -331,10 +331,13 @@ def classify_dimensions_llm(question: str) -> dict | None:
         )
         raw = response.text.strip()
         import json
-        # 提取 JSON 对象
-        match = re.search(r'\{[\s\S]*?\}', raw)
-        if match:
-            result = json.loads(match.group())
+        # 尝试完整解析为 JSON（处理可能的前后噪音）
+        # 先找第一个 { 和最后一个 }
+        start = raw.find('{')
+        end = raw.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            cleaned = raw[start:end+1]
+            result = json.loads(cleaned)
             dims = result.get("dims", [])
             reasonings = result.get("reasonings", {})
             if isinstance(dims, list):
@@ -344,8 +347,11 @@ def classify_dimensions_llm(question: str) -> dict | None:
                         "dims": valid,
                         "reasonings": {d: reasonings.get(d, "") for d in valid}
                     }
+    except json.JSONDecodeError as e:
+        print(f"    LLM 维度分类 JSON 解析失败: {e}")
+        print(f"    LLM 原始响应: {raw[:200]}")
     except Exception as e:
-        print(f"    LLM 维度分类失败: {e}")
+        print(f"    LLM 维度分类异常: {e}")
 
     return None
 

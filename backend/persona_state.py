@@ -426,7 +426,7 @@ def record_choice(
             reason = f"  # {r[:70]}{"..." if len(r) > 70 else ""}"
         print(f"    [维度] {label} α={base_alpha:.2f}→{alpha:.3f}"
               f"  {chosen_scores[dim]:.1f}←({old_other:.1f}→{new_val:.1f})"
-              f"  (调{adjustments}轮){reason}", end="")
+              f"  (调{dim_info['adjustments']}轮){reason}", end="")
 
         # 调整后检测是否收敛
         new_gap = abs(chosen_scores[dim] - other_scores[dim])
