@@ -52,6 +52,7 @@ from persona_state import (
     reset_state,
     save_state,
 )
+from session import Session, SessionState
 from storage import MemoryStorage
 from prompt_builder import build_dual_answer_prompts
 from prompts import load_prompt
@@ -90,6 +91,7 @@ llm_client.on_record = lambda record: llm_logger.record_from_llm_record(record, 
 # 全局存储后端（纯内存，进程退出即清空）
 eye_storage = MemoryStorage[dict]()
 memory_storage = MemoryStorage[list]()
+session_storage = MemoryStorage[SessionState]()
 
 # 全局眼动数据处理器（带 Storage 持久化）
 eye_processor = EyeTrackerProcessor(storage=eye_storage, storage_key="default")
@@ -104,6 +106,11 @@ def _get_memory(project_name: str) -> "MemoryStore":
     if project_name not in _memory_stores:
         _memory_stores[project_name] = MemoryStore(project_name, storage=memory_storage)
     return _memory_stores[project_name]
+
+
+def _get_session(project_name: str = "default") -> "Session":
+    """获取项目的 Session，按需创建"""
+    return Session(session_storage, project_name)
 
 
 def generate_dual_answers(prompt, context_files=None, eye_data=None, persona_state=None):
@@ -396,6 +403,7 @@ def ask():
 
     def generate():
         prev_summary = None
+        session = _get_session(project_name)
 
         for i, sq in enumerate(sub_questions):
             sub_prompt = sq["prompt"]
@@ -403,6 +411,14 @@ def ask():
                 sub_prompt = f"上一步: {prev_summary}\n\n当前: {sub_prompt}"
 
             full_prompt = f"原始问题: {prompt}\n\n当前子任务: {sub_prompt}"
+
+            # Session 上下文注入
+            session_history = session.build_context(max_entries=4)
+            session_context = ""
+            if session_history:
+                lines = [f"{m['role']}: {m['content'][:200]}" for m in session_history]
+                session_context = "\n".join(lines)
+                full_prompt = f"对话历史:\n{session_context}\n\n---\n\n{full_prompt}"
 
             # RAG 检索相关记忆
             memory_store = _get_memory(project_name)
@@ -417,7 +433,10 @@ def ask():
                 except Exception as e:
                     print(f"    记忆检索失败: {e}")
 
-            # SSE: 子问题开始
+            # 记录用户问题到 Session
+            session.append("question", {"text": sub_prompt})
+
+            # SSE: 子问题开始 + session/turn 事件
             yield create_segment_start(i, len(sub_questions), sq["id"], sq.get("contextHint", ""))
 
             result = generate_dual_answers(full_prompt, context_files, eye_data, persona_state)
@@ -442,6 +461,10 @@ def ask():
             answer_b = result.get("answerB", "")
             yield create_text_delta(sq["id"], "concise", answer_b)
             yield create_text_end(sq["id"], "concise", answer_b)
+
+            # 记录答案到 Session
+            session.append("answer_a", {"text": answer_a}, parent_id=None)  # 挂在 question 下
+            session.append("answer_b", {"text": answer_b}, parent_id=None)
 
             # SSE: 子问题结束
             yield create_segment_end(i, len(sub_questions), sq["id"], result.get("success", False))
@@ -577,8 +600,17 @@ def save_preference():
         eye_confidence = strength * maturity
         eye_bias = bias_val
 
-    # 更新 Persona 状态
+    # 记录选择到 Session
+    session = _get_session(project_name)
     final_choice = preference.get("finalChoice", None)
+    if final_choice in ("A", "B"):
+        session.append("choice", {
+            "side": final_choice,
+            "detail_score": adjustments.get("detail_score", 0.5),
+            "explanation_score": adjustments.get("explanation_score", 0.5),
+        })
+
+    # 更新 Persona 状态
     if final_choice in ("A", "B") and persona_state:
         # 判断问题涉及哪些维度
         # 先用 LLM 分类，失败回退到关键词
@@ -649,6 +681,15 @@ def save_preference():
             names = ", ".join(DIMS_LABEL.get(d, d) for d in unconverged_dims)
             print(f"    学习中({len(unconverged_dims)}/{total}): {names}")
         print(f"    Persona 偏差: {persona_gap:.4f} (分类来源: {dim_classify_source})")
+
+        # 记录 Persona 变化到 Session
+        converged_names = [DIMS_LABEL.get(d, d) for d in converged_dims]
+        converged_summary = ", ".join(converged_names) if converged_names else "无新收敛"
+        session.append("persona_change", {
+            "summary": f"选{final_choice}, 收敛: {converged_summary}",
+            "final_choice": final_choice,
+            "converged_count": len(converged_dims),
+        })
         all_done = updated_state.get('all_converged', False)
         if all_done:
             print("    所有维度已收敛，未选中侧进入随机探索模式")
@@ -704,7 +745,8 @@ def reset_eye_model():
     reset_state(project_name)
     if project_name in _memory_stores:
         _memory_stores[project_name].clear()
-    print(f"\n  眼动模型 + Persona + 记忆已重置 (项目: {project_name})\n")
+    _get_session(project_name).clear()
+    print(f"\n  眼动模型 + Persona + 记忆 + Session 已重置 (项目: {project_name})\n")
     return jsonify({"success": True})
 
 

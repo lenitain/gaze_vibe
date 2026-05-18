@@ -183,7 +183,141 @@ class Error(SSEEvent):
         return {"type": self.type, "message": self.message, "code": self.code}
 
 
-# ===== 事件工厂 =====
+# ===== Agent 生命周期事件（Phase 2, 参考 pi AgentEvent） =====
+
+@dataclass
+class SessionStart(SSEEvent):
+    """Session 开始"""
+    type: str = "session_start"
+    session_id: str = ""
+    project_name: str = "default"
+    timestamp: str = ""
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, "sessionId": self.session_id,
+                "projectName": self.project_name, "timestamp": self.timestamp}
+
+
+@dataclass
+class TurnStart(SSEEvent):
+    """Turn 开始（一次用户交互）"""
+    type: str = "turn_start"
+    turn_id: str = ""
+    session_id: str = ""
+    question: str = ""
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, "turnId": self.turn_id,
+                "sessionId": self.session_id, "question": self.question}
+
+
+@dataclass
+class MessageStart(SSEEvent):
+    """消息开始（一个答案开始生成）"""
+    type: str = "message_start"
+    turn_id: str = ""
+    style: str = ""  # "detailed" | "concise"
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, "turnId": self.turn_id, "style": self.style}
+
+
+@dataclass
+class MessageDelta(SSEEvent):
+    """消息增量"""
+    type: str = "message_delta"
+    turn_id: str = ""
+    style: str = ""
+    text: str = ""
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, "turnId": self.turn_id,
+                "style": self.style, "text": self.text}
+
+
+@dataclass
+class MessageEnd(SSEEvent):
+    """消息结束"""
+    type: str = "message_end"
+    turn_id: str = ""
+    style: str = ""
+    full_text: str = ""
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, "turnId": self.turn_id,
+                "style": self.style, "fullText": self.full_text}
+
+
+@dataclass
+class ToolCallExec(SSEEvent):
+    """工具执行（后端静默执行时可选推送进度）"""
+    type: str = "tool_call_exec"
+    turn_id: str = ""
+    tool_name: str = ""
+    status: str = "running"  # "running" | "done" | "error"
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, "turnId": self.turn_id,
+                "toolName": self.tool_name, "status": self.status}
+
+
+@dataclass
+class SessionEnd(SSEEvent):
+    """Session 结束"""
+    type: str = "session_end"
+    session_id: str = ""
+    total_turns: int = 0
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, "sessionId": self.session_id,
+                "totalTurns": self.total_turns}
+
+
+# AgentEvent 联合类型（参考 pi 的 AgentEvent）
+type AgentEvent = (
+    SessionStart | TurnStart | MessageStart | MessageDelta | MessageEnd
+    | ToolCallExec | EyeAdjustment | SessionEnd
+    | SegmentStart | SegmentEnd | TextStart | TextDelta | TextEnd
+    | ToolCall | ToolResult | Done | Error
+)
+
+
+# ===== 新事件工厂 =====
+
+def create_session_start(session_id: str, project_name: str = "default", timestamp: str | None = None) -> str:
+    from datetime import datetime
+    return SessionStart(
+        session_id=session_id,
+        project_name=project_name,
+        timestamp=timestamp or datetime.now().isoformat(),
+    ).to_sse()
+
+
+def create_turn_start(turn_id: str, session_id: str, question: str) -> str:
+    return TurnStart(turn_id=turn_id, session_id=session_id, question=question[:200]).to_sse()
+
+
+def create_message_start(turn_id: str, style: str) -> str:
+    return MessageStart(turn_id=turn_id, style=style).to_sse()
+
+
+def create_message_delta(turn_id: str, style: str, text: str) -> str:
+    return MessageDelta(turn_id=turn_id, style=style, text=text).to_sse()
+
+
+def create_message_end(turn_id: str, style: str, full_text: str) -> str:
+    return MessageEnd(turn_id=turn_id, style=style, full_text=full_text).to_sse()
+
+
+def create_tool_call_exec(turn_id: str, tool_name: str, status: str = "running") -> str:
+    return ToolCallExec(turn_id=turn_id, tool_name=tool_name, status=status).to_sse()
+
+
+def create_session_end(session_id: str, total_turns: int = 0) -> str:
+    return SessionEnd(session_id=session_id, total_turns=total_turns).to_sse()
+
+
+# ===== 事件工厂（原有，保持向后兼容） =====
 
 def create_segment_start(index: int, total: int, segment_id: str, hint: str = "") -> str:
     return SegmentStart(index=index, total=total, id=segment_id, context_hint=hint).to_sse()
