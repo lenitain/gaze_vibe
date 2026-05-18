@@ -397,21 +397,12 @@ class EyeTrackerProcessor:
         """
         计算最终分数
 
-        使用 β 加权混合实时分数和长期模型
-        β 随轮次增加而降低 (越后期越依赖长期模型)
+        直接使用 EMA 长期模型（已在 _update_long_term_model 中融合实时数据）
         """
-        # β 从 0.7 逐渐降低到 0.3
-        beta = max(0.3, 0.7 - (self.round_count - 1) * 0.1)
-        beta = min(0.7, beta)
-
-        # 混合当前轮次和长期模型
-        # 注意：这里我们只用长期模型，因为当前轮次已经在 EMA 中被考虑了
-        # 但为了展示效果，我们使用加权混合
         final_detail = self.long_term_detail
         final_explanation = self.long_term_explanation
         final_persona_bias = self.long_term_persona_bias
 
-        thoughts.append(f"  β (实时权重) = {beta:.2f}")
         thoughts.append("  最终分数 = 长期模型 (已通过 EMA 融合实时数据)")
         thoughts.append(f"    detail_score = {final_detail:.4f}")
         thoughts.append(f"    explanation_score = {final_explanation:.4f}")
@@ -421,7 +412,6 @@ class EyeTrackerProcessor:
             "detail_score": final_detail,
             "explanation_score": final_explanation,
             "persona_bias": final_persona_bias,
-            "beta": beta,
             "round_count": self.round_count,
         }
 

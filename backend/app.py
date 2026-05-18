@@ -561,9 +561,15 @@ def save_preference():
             eye_bias=eye_bias,
         )
         if eye_confidence is not None:
-            eye_side = "A" if (eye_bias or 0.5) > 0.5 else "B"
-            consistent = "一致" if eye_side == final_choice else "矛盾"
-            print(f"    眼动调制: conf={eye_confidence:.2f}, bias={eye_bias or 0.5:.2f} (眼动偏{eye_side}, 选{final_choice}, {consistent})")
+            from persona_state import NEUTRAL_BIAS_THRESHOLD
+            bias_val = eye_bias or 0.5
+            if abs(bias_val - 0.5) > NEUTRAL_BIAS_THRESHOLD:
+                eye_side = "A" if bias_val > 0.5 else "B"
+                consistent = "一致" if eye_side == final_choice else "矛盾"
+                mode = f"偏{eye_side}, {consistent}"
+            else:
+                mode = "中性"
+            print(f"    眼动调制: conf={eye_confidence:.2f}, bias={bias_val:.2f} ({mode})")
         else:
             print("    眼动调制: 无眼动数据，使用基础调整速度")
         save_state(project_name, updated_state)
