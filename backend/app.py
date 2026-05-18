@@ -29,6 +29,7 @@ from config import (
     LLM_TIMEOUT,
     LOG_DIR,
     MEMORY_TOP_K,
+    PROJECT_ROOT,
     SPLIT_MAX_TOKENS,
     SPLIT_TEMPERATURE,
 )
