@@ -29,6 +29,20 @@ curl http://localhost:8000/api/health
 
 API Key 配置在 `backend/.env`（`DEEPSEEK_API_KEY`），参考 `.env.example` 复制。
 
+## 浏览器限制说明
+
+GazeVibe 是 Web 应用（Vue 前端 + Flask 后端），通过浏览器 File System Access API 读取项目文件。
+**出于浏览器安全限制，前端无法获取文件的完整系统路径，因此后端无法直接读写用户磁盘上的文件。**
+
+具体限制：
+- 浏览器 `showDirectoryPicker()` 只返回文件夹名和文件句柄，不暴露绝对路径
+- 后端虽然运行在用户本地（localhost），但无法得知前端选择的文件夹在磁盘上的位置
+- AI 生成的新文件或修改建议仅以文本形式展示在答案面板中，不会自动写入磁盘
+
+如需将 AI 生成的代码保存到本地，请手动复制代码块内容。
+
+---
+
 ## 目录结构
 
 ```
