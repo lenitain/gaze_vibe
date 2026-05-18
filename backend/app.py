@@ -454,7 +454,7 @@ def ask():
     experiment_mode = data.get("experimentMode", "full")
     eye_data = data.get("eyeData")
     project_name = data.get("projectName", "default")
-    project_root = data.get("projectRoot")
+    project_root = data.get("projectRoot") or PROJECT_ROOT
     persona_state = load_state(project_name)
 
     if not prompt:
@@ -560,7 +560,7 @@ def ask_batch():
     data = request.json
     prompt = data.get("prompt", "")
     context_files = data.get("contextFiles", [])
-    project_root = data.get("projectRoot")
+    project_root = data.get("projectRoot") or PROJECT_ROOT
     persona_state = data.get("personaState")
 
     if not prompt:
