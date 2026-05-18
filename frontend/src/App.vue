@@ -151,8 +151,10 @@ async function handleSubmit(prompt) {
   const relevantFiles = selectRelevantFiles(prompt, indexedFiles.value)
   const contextFiles = formatFilesForPrompt(relevantFiles)
 
+  // 只有上一轮有选择时才收集眼动数据，否则丢弃（用户未选择直接输入新问题）
   let eyeData = null
-  if (eyeTrackerRef.value && isEyeTracking.value) {
+  const hadChoice = userPreference.value.finalChoice !== null
+  if (hadChoice && eyeTrackerRef.value && isEyeTracking.value) {
     eyeTrackerRef.value.stopTracking()
     isEyeTracking.value = false
     eyeData = {
@@ -164,6 +166,14 @@ async function handleSubmit(prompt) {
       answerBLength: answerBLength.value,
       ...eyeTrackerRef.value.getAllMetrics()
     }
+    userPreference.value.timeOnA = 0
+    userPreference.value.timeOnB = 0
+    userPreference.value.leftToRight = 0
+    userPreference.value.rightToLeft = 0
+  } else if (eyeTrackerRef.value && isEyeTracking.value) {
+    // 无选择，停止追踪但不收集数据
+    eyeTrackerRef.value.stopTracking()
+    isEyeTracking.value = false
     userPreference.value.timeOnA = 0
     userPreference.value.timeOnB = 0
     userPreference.value.leftToRight = 0
