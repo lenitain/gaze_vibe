@@ -95,6 +95,9 @@ eye_storage = MemoryStorage[dict]()
 memory_storage = MemoryStorage[list]()
 session_storage = MemoryStorage[SessionState]()
 
+# 项目根目录映射（前端可通过 API 设置，优先级高于环境变量）
+_project_root_map: dict[str, str] = {}
+
 # 全局眼动数据处理器（带 Storage 持久化）
 eye_processor = EyeTrackerProcessor(storage=eye_storage, storage_key="default")
 
@@ -455,7 +458,8 @@ def ask():
     experiment_mode = data.get("experimentMode", "full")
     eye_data = data.get("eyeData")
     project_name = data.get("projectName", "default")
-    project_root = data.get("projectRoot") or PROJECT_ROOT
+    # projectRoot 优先级：请求参数 > API 设置 > 环境变量
+    project_root = data.get("projectRoot") or _project_root_map.get(project_name) or PROJECT_ROOT
     persona_state = load_state(project_name)
 
     if not prompt:
@@ -561,7 +565,7 @@ def ask_batch():
     data = request.json
     prompt = data.get("prompt", "")
     context_files = data.get("contextFiles", [])
-    project_root = data.get("projectRoot") or PROJECT_ROOT
+    project_root = data.get("projectRoot") or _project_root_map.get(project_name) or PROJECT_ROOT
     persona_state = data.get("personaState")
 
     if not prompt:
@@ -829,6 +833,32 @@ def get_stats():
             "active": list(_memory_stores.keys()),
         },
     })
+
+
+@app.route("/api/project-root", methods=["POST", "GET"])
+def project_root_api():
+    """设置/获取项目根目录（供前端 UI 使用）"""
+    if request.method == "POST":
+        data = request.json or {}
+        project_name = data.get("projectName", "default")
+        root_path = data.get("projectRoot", "")
+        if root_path:
+            import os
+            root_path = os.path.expanduser(root_path)
+            if os.path.isdir(root_path):
+                _project_root_map[project_name] = root_path
+                print(f"  [项目] 设置 projectRoot[{project_name}] = {root_path}")
+                return jsonify({"success": True, "projectRoot": root_path})
+            else:
+                return jsonify({"success": False, "error": f"目录不存在: {root_path}"}), 400
+        else:
+            _project_root_map.pop(project_name, None)
+            return jsonify({"success": True, "projectRoot": None})
+
+    # GET
+    project_name = request.args.get("projectName", "default")
+    root = _project_root_map.get(project_name) or PROJECT_ROOT or None
+    return jsonify({"projectRoot": root, "source": "api" if project_name in _project_root_map else "env" if PROJECT_ROOT else None})
 
 
 @app.route("/api/health", methods=["GET"])

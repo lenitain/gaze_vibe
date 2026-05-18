@@ -1,12 +1,15 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'setProjectRoot'])
 
 const isSupported = ref(true)
 const isLoading = ref(false)
 const error = ref('')
 const folderName = ref('')
+const projectRoot = ref('')
+const rootError = ref('')
+const rootSaving = ref(false)
 
 onMounted(() => {
   if (!('showDirectoryPicker' in window)) {
@@ -38,6 +41,33 @@ async function selectFolder() {
     isLoading.value = false
   }
 }
+
+async function saveProjectRoot() {
+  const path = projectRoot.value.trim()
+  if (!path) {
+    rootError.value = '请输入项目路径'
+    return
+  }
+  rootSaving.value = true
+  rootError.value = ''
+  try {
+    const res = await fetch('/api/project-root', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectRoot: path }),
+    })
+    const data = await res.json()
+    if (data.success) {
+      emit('setProjectRoot', data.projectRoot)
+    } else {
+      rootError.value = data.error || '设置失败'
+    }
+  } catch (e) {
+    rootError.value = `请求失败: ${e.message}`
+  } finally {
+    rootSaving.value = false
+  }
+}
 </script>
 
 <template>
@@ -62,6 +92,39 @@ async function selectFolder() {
       </button>
 
       <p v-if="error" class="error">{{ error }}</p>
+
+      <!-- 项目路径输入（用于后端文件读写） -->
+      <div class="root-input-section">
+        <p class="root-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+          项目文件系统路径（AI 可读写文件的根目录）
+        </p>
+        <div class="root-input-row">
+          <input
+            v-model="projectRoot"
+            type="text"
+            class="root-input"
+            placeholder="例如: /home/user/my-project"
+            @keyup.enter="saveProjectRoot"
+          />
+          <button
+            class="root-save-btn"
+            :disabled="rootSaving || !projectRoot.trim()"
+            @click="saveProjectRoot"
+          >
+            <span v-if="rootSaving" class="mini-loading"></span>
+            <span v-else>应用</span>
+          </button>
+        </div>
+        <p v-if="rootError" class="error root-error">{{ rootError }}</p>
+        <p class="root-hint">浏览器不暴露完整路径，手动填入以便后端读写文件（如 /home/lenitain/.projects/test4gaze）</p>
+      </div>
 
       <p class="hint">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -156,6 +219,83 @@ h2 {
   color: var(--red);
   margin-top: 16px;
   font-size: var(--font-sm);
+}
+
+.root-input-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--bg1);
+  text-align: left;
+}
+
+.root-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--grey1);
+  font-size: var(--font-sm);
+  margin-bottom: 8px;
+}
+
+.root-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.root-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--bg1);
+  border-radius: 6px;
+  background: var(--bg0);
+  color: var(--fg);
+  font-size: var(--font-md);
+  font-family: monospace;
+}
+
+.root-input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+.root-save-btn {
+  background: var(--blue);
+  color: var(--bg0);
+  border: none;
+  padding: 10px 20px;
+  font-size: var(--font-md);
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.root-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.root-error {
+  margin-top: 8px;
+  font-size: var(--font-sm);
+}
+
+.root-hint {
+  margin-top: 8px;
+  color: var(--grey0);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+}
+
+.mini-loading {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top-color: var(--bg0);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
 }
 
 .hint {
