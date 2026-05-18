@@ -48,5 +48,5 @@ ignore = [
 quote-style = "double"
 
 [tool.pytest.ini_options]
-testpaths = ["backend"]
+testpaths = ["backend/tests", "backend"]
 python_files = ["test_*.py"]
