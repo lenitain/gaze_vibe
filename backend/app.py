@@ -268,12 +268,20 @@ def split_user_question(prompt, context_files, max_sub_questions=4):
 
 # ===== LLM 维度分类 =====
 
-def classify_dimensions_llm(question: str) -> list[str] | None:
+def classify_dimensions_llm(question: str) -> dict | None:
     """
-    使用 LLM 判断用户问题涉及哪些维度。
+    使用 LLM 判断用户问题涉及哪些维度，并给出推理。
 
     比关键词匹配更准确，能处理"这个 toml crate 依赖太重了"这种复合语义。
-    返回维度名称列表，失败返回 None（由调用方回退到关键词）。
+
+    Returns:
+        {
+            "dims": ["error_handling", ...],  # 涉及的维度列表
+            "reasonings": {                      # 每维度推理
+                "error_handling": "用户问题提到了'panic'和'Result'..."
+            }
+        }
+        失败返回 None（由调用方回退到关键词）。
     """
     # 构建维度描述
     dim_parts = []
@@ -302,32 +310,44 @@ def classify_dimensions_llm(question: str) -> list[str] | None:
 
 {dim_descriptions}
 
-只返回 JSON 数组，如 ["error_handling", "testing_strategy"]。
-如果问题不涉及任何特定维度，返回 []。
-不要解释，只输出 JSON。"""
+对每个涉及的维度，解释为什么用户的问题与该维度相关，以及用户在该维度上可能偏向哪一侧（稳健极5/现代极1）。
+
+返回 JSON 格式：
+{{
+  "dims": ["error_handling"],
+  "reasonings": {{
+    "error_handling": "用户问题中提到了'panic'和'Result'，属于错误处理范畴。用户询问是否应该用自定义错误类型替代 anyhow，说明用户可能倾向于更严谨的错误处理方式（稳健派，score≈4-5）"
+  }}
+}}
+如果问题不涉及任何特定维度，返回 {{"dims": [], "reasonings": {{}}}}。
+只输出 JSON，不要额外解释。"""
 
     try:
         response = llm_client.generate(
             system_prompt=system_prompt,
             user_prompt=question,
             temperature=0.1,
-            max_tokens=100,
+            max_tokens=300,
         )
         raw = response.text.strip()
-        # 提取 JSON 数组
         import json
-        match = re.search(r'\[[\s\S]*?\]', raw)
+        # 提取 JSON 对象
+        match = re.search(r'\{[\s\S]*?\}', raw)
         if match:
-            dims = json.loads(match.group())
+            result = json.loads(match.group())
+            dims = result.get("dims", [])
+            reasonings = result.get("reasonings", {})
             if isinstance(dims, list):
-                # 过滤有效维度
                 valid = [d for d in dims if d in DIMENSION_PRIORITY]
-                return valid if valid else None
+                if valid:
+                    return {
+                        "dims": valid,
+                        "reasonings": {d: reasonings.get(d, "") for d in valid}
+                    }
     except Exception as e:
         print(f"    LLM 维度分类失败: {e}")
 
     return None
-
 
 # ===== API 路由 =====
 
@@ -544,18 +564,31 @@ def save_preference():
         # 判断问题涉及哪些维度
         # 先用 LLM 分类，失败回退到关键词
         relevant_dims = None
+        dim_reasonings = {}
         dim_classify_source = "全部未收敛"
         if current_question:
-            relevant_dims = classify_dimensions_llm(current_question)
-            if relevant_dims is not None:
+            # 先试 LLM 分类（带推理）
+            llm_result = classify_dimensions_llm(current_question)
+            if llm_result is not None:
+                relevant_dims = llm_result["dims"]
+                dim_reasonings = llm_result["reasonings"]
                 dim_classify_source = "LLM"
-                print(f"    LLM 维度分类: {relevant_dims}")
+                if relevant_dims:
+                    print(f"    LLM 维度分类: {relevant_dims}")
+                    for d, r in dim_reasonings.items():
+                        print(f"      {d}: {r[:100]}{'...' if len(r) > 100 else ''}")
+                else:
+                    print(f"    LLM 分类结果为空（问题不涉及特定维度），跳过维度调整")
             else:
                 print(f"    LLM 维度分类失败(返回None)，尝试关键词回退...")
-                relevant_dims = classify_dimensions(current_question)
+                kw_result = classify_dimensions(current_question)
+                relevant_dims = kw_result["dims"]
+                dim_reasonings = kw_result["reasonings"]
                 if relevant_dims:
                     dim_classify_source = "关键词"
                     print(f"    关键词维度分类: {relevant_dims}")
+                    for d, r in dim_reasonings.items():
+                        print(f"      {d}: {r}")
                 else:
                     print(f"    关键词匹配无结果，全部未收敛维度参与调整")
 
@@ -563,6 +596,7 @@ def save_preference():
             persona_state, final_choice, relevant_dims,
             eye_confidence=eye_confidence,
             eye_bias=eye_bias,
+            dim_reasonings=dim_reasonings if dim_reasonings else None,
         )
         from persona_state import DIMS_LABEL, NEUTRAL_BIAS_THRESHOLD
 

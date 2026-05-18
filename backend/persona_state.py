@@ -122,12 +122,19 @@ def _initial_state() -> dict:
     }
 
 
-def classify_dimensions(question: str) -> list[str]:
+def classify_dimensions(question: str) -> dict:
     """
-    通过关键词匹配判断用户问题涉及哪些 Persona 维度。
+    通过关键词匹配判断用户问题涉及哪些 Persona 维度，并给出匹配依据。
 
-    返回维度名称列表，如 ["error_handling", "testing_strategy"]。
-    若无匹配，返回空列表（表示全部维度都可能相关）。
+    Returns:
+        {
+            "dims": ["error_handling", "testing_strategy"],
+            "reasonings": {
+                "error_handling": "关键词匹配: 错误, error, 错误处理",
+                "testing_strategy": "关键词匹配: 测试, test"
+            }
+        }
+        若无匹配，返回 {"dims": [], "reasonings": {}}。
 
     注意：这是关键词回退方案。推荐使用 classify_dimensions_llm() 获取更准确的结果。
     """
@@ -178,13 +185,14 @@ def classify_dimensions(question: str) -> list[str]:
     }
 
     matched = []
+    reasonings = {}
     for dim, keywords in DIM_KEYWORDS.items():
-        for kw in keywords:
-            if kw in q:
-                matched.append(dim)
-                break
+        matched_kws = [kw for kw in keywords if kw in q]
+        if matched_kws:
+            matched.append(dim)
+            reasonings[dim] = f"问题含关键词: {', '.join(matched_kws[:3])}"
 
-    return matched
+    return {"dims": matched, "reasonings": reasonings}
 
 
 def _ensure_dim_fields(dim_info: dict, dim: str | None = None) -> dict:
@@ -250,6 +258,7 @@ def record_choice(
     relevant_dims: list[str] | None = None,
     eye_confidence: float | None = None,
     eye_bias: float | None = None,
+    dim_reasonings: dict[str, str] | None = None,
 ) -> dict:
     """
     记录用户选择，返回更新后的 state dict。
@@ -261,6 +270,8 @@ def record_choice(
     眼动数据（eye_confidence, eye_bias）用于调制维度调整的速度：
     - 高置信度 + 方向一致 → 快速收敛
     - 低置信度或矛盾 → 保守收敛
+
+    dim_reasonings: LLM/关键词对每个维度涉及理由的解释，用于日志展示
     """
     persona_a = state["persona_a"]["scores"]
     persona_b = state["persona_b"]["scores"]
@@ -311,12 +322,18 @@ def record_choice(
                     dim_info["preferred_side"] = None
                 else:
                     dims[dim] = dim_info
-                    print(f"    [维度] {label} ✓ 已收敛(偏{preferred_side}), 反转累计 {oc}/{UNCONVERGE_THRESHOLD}")
+                    reason = ""
+                    if dim_reasonings and dim in dim_reasonings:
+                        reason = f"  # {dim_reasonings[dim][:70]}{"..." if len(dim_reasonings[dim]) > 70 else ""}"
+                    print(f"    [维度] {label} ✓ 已收敛(偏{preferred_side}), 反转累计 {oc}/{UNCONVERGE_THRESHOLD}{reason}")
                 continue
             elif dim in target_dims and preferred_side and chosen_side == preferred_side:
                 dim_info["opposite_count"] = 0
                 dims[dim] = dim_info
-                print(f"    [维度] {label} ✓ 已收敛(偏{preferred_side}), 选择一致 → 重置")
+                reason = ""
+                if dim_reasonings and dim in dim_reasonings:
+                    reason = f"  # {dim_reasonings[dim][:70]}{"..." if len(dim_reasonings[dim]) > 70 else ""}"
+                print(f"    [维度] {label} ✓ 已收敛(偏{preferred_side}), 选择一致 → 重置{reason}")
             else:
                 print(f"    [维度] {label} ✓ 已收敛(不相关维度, 跳过)")
             continue
@@ -342,7 +359,10 @@ def record_choice(
             dim_info["opposite_count"] = 0
             dim_info["adjustments"] = dim_info.get("adjustments", 0) + 1
             dims[dim] = dim_info
-            print(f"    [维度] {label} → 收敛(A/B={avg}) (差距{gap:.2f}<{MIN_DIFF_TO_ADJUST}, 直接合并)")
+            reason = ""
+            if dim_reasonings and dim in dim_reasonings:
+                reason = f"  # {dim_reasonings[dim][:70]}{"..." if len(dim_reasonings[dim]) > 70 else ""}"
+            print(f"    [维度] {label} → 收敛(A/B={avg}) (差距{gap:.2f}<{MIN_DIFF_TO_ADJUST}, 直接合并){reason}")
             continue
 
         # 有显著差距 → EMA 调整
@@ -352,9 +372,15 @@ def record_choice(
         other_scores[dim] = new_val
         dim_info["adjustments"] = dim_info.get("adjustments", 0) + 1
 
+        # 构建推理描述
+        reason = ""
+        if dim_reasonings and dim in dim_reasonings:
+            r = dim_reasonings[dim]
+            # 取推理的前50个字
+            reason = f"  # {r[:70]}{"..." if len(r) > 70 else ""}"
         print(f"    [维度] {label} α_base={base_alpha:.2f}→α_adj={alpha:.3f}"
               f"  {chosen_scores[dim]:.1f}←({old_other:.1f}→{new_val:.1f})"
-              f"  (调{adjustments}轮)", end="")
+              f"  (调{adjustments}轮){reason}", end="")
 
         # 调整后检测是否收敛
         new_gap = abs(chosen_scores[dim] - other_scores[dim])
