@@ -213,8 +213,8 @@ def gen_experiment_record(
     persona_scores: dict | None = None,
 ) -> dict:
     """生成一条完整的实验数据记录"""
-    # 总注视时间
-    total_time = int(RNG.uniform(3000, 12000))
+    # 总注视时间（正态分布，更贴合真实阅读行为）
+    total_time = int(max(2500, min(15000, RNG.normal(7000, 2200))))
     len_a = max(1, answer_a_length)
     len_b = max(1, answer_b_length)
 
@@ -224,7 +224,7 @@ def gen_experiment_record(
         time_a = time_b = total_time // 2
         raw_bias = 0.5
     else:
-        strength = min(0.85, 0.55 + round_num * 0.008)  # 随轮次收敛更强
+        strength = min(0.80, 0.52 + round_num * 0.006)  # 随轮次收敛更强
         norm_bias = gen_norm_gaze_bias(chosen_side, strength)
         raw_bias = raw_from_norm(norm_bias, len_a, len_b)
         time_a, time_b = gen_time_distribution(raw_bias, total_time)
@@ -307,7 +307,7 @@ def gen_experiment_record(
             "leftToRight": RNG.integers(2, 15) if eye_metrics else 0,
             "rightToLeft": RNG.integers(2, 15) if eye_metrics else 0,
         },
-        "decisionTimeMs": int(RNG.uniform(3000, 15000)),
+        "decisionTimeMs": int(total_time * RNG.uniform(0.8, 1.2)),
         "eyeMetrics": eye_metrics,
         "hasEyeMetrics": eye_metrics is not None,
         "answerALength": answer_a_length,
