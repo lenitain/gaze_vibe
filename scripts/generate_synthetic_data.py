@@ -102,17 +102,16 @@ def gen_eye_metrics(
     base_saccades = int(total_s * RNG.uniform(1.5, 4.0))
     saccade_count = max(1, base_saccades + int(RNG.normal(0, 2)))
 
-    # 切换方向
-    left_to_right = int(saccade_count * RNG.uniform(0.3, 0.7))
-    right_to_left = saccade_count - left_to_right
-
-    # 回视率：选 B 时略高（可能需要确认稳健解答的细节）
+    # 切换方向（含方向倾向）：选B时B→A（回视）更多，directionRatio更低
     if chosen_side == "A":
-        regression_rate = normal_clamp(0.25, 0.08, 0.0, 1.0)
+        direction_ratio = RNG.uniform(0.45, 0.75)  # A→B为主
     else:
-        regression_rate = normal_clamp(0.32, 0.10, 0.0, 1.0)
+        direction_ratio = RNG.uniform(0.25, 0.55)  # B→A（回视）更多
 
-    direction_ratio = left_to_right / max(1, saccade_count)
+    left_to_right = int(saccade_count * direction_ratio)
+    right_to_left = saccade_count - left_to_right
+    # regressionRate 从实际切换计数推导，确保 directionRatio + regressionRate ≡ 1
+    regression_rate = right_to_left / max(1, saccade_count)
 
     # 首次注视：多数情况下先看 A（左侧），受 gazeBias 影响
     first_region = "A" if RNG.uniform(0, 1) < 0.65 else "B"
